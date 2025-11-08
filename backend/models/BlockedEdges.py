@@ -1,4 +1,4 @@
-from backend.database import db
+from ..database import db
 from datetime import datetime
 
 class BlockedEdges(db.Model):

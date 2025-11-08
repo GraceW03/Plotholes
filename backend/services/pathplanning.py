@@ -1,5 +1,5 @@
-from backend.models.BlockedEdges import BlockedEdges
-from backend.app import create_app
+from ..models.BlockedEdges import BlockedEdges
+# from backend.app import create_app
 import osmnx as ox
 import networkx as nx
 import matplotlib as plot
@@ -68,6 +68,16 @@ def convert_latlon_to_node(graph, point):
     """
     return ox.distance.nearest_nodes(graph, X=point[1], Y=point[0])
 
+def convert_route_to_latlon(graph, route):
+    """
+    Convert a list of node IDs to a list of (latitude, longitude) tuples.
+
+    graph: OSMnx graph
+    route: list of node IDs
+    """
+    latlon_route = [(graph.nodes[n]['y'], graph.nodes[n]['x']) for n in route]
+    return latlon_route
+
 def visualize_large(graph, route):
     """
     Visualizes the route on the overall graph
@@ -104,62 +114,85 @@ def visualize_zoomed(graph, route, origin_node, destination_node):
     ax.scatter(graph.nodes[destination_node]['x'], nyc_graph.nodes[destination_node]['y'], c='blue', s=100, zorder=5)
 
     plot.pyplot.show()
+ 
+def compute_final_route(graph, origin, destination, blocked_edges_set):
+    """
+    High-level function to get shortest route in lat/lon coordinates.
 
-if __name__ == '__main__':
-    # Initialize Flask app + DB context
-    app = create_app()
+    origin, destination: tuples (lat, lon)
+    blocked_edges_set: set of blocked edges (cached)
+    graph: full OSMnx graph
 
-    with app.app_context():
-        # TODO: CACHE THIS - load blocked edges on startup of app
-        blocked_edges_set = app.blocked_edges_set  # use cached set
+    Returns: list of (lat, lon) tuples or None
+    """
+    # Find subgraph around origin/destination
+    subgraph = get_subgraph(graph, origin, destination, margin=0.02)
 
-        # Load in graph of map
-        BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        GRAPH_PATH = os.path.join(BASE_DIR, 'data', 'nyc_graphml.graphml')
-        nyc_graph = ox.load_graphml(GRAPH_PATH)
+    # Find the node on the graph closest to this longitude and latitudes
+    origin_node = convert_latlon_to_node(subgraph, origin)
+    dest_node = convert_latlon_to_node(subgraph, destination)
 
-        # Define latitude and longitude of origin and destination
-        origin = (40.681722, -73.832725)
-        destination = (40.682725, -73.829194)
+    # Get the shortest path that avoids blocked streets
+    route_nodes = get_shortest_path(subgraph, orig_node=origin_node, dest_node=dest_node, blocked_edges_set=blocked_edges_set)
 
-        # Find subgraph around origin/destination
-        subgraph = get_subgraph(nyc_graph, origin, destination, margin=0.02)
+    if not route_nodes:
+        return None
+    
+    # Convert nodes to lat/lon
+    return convert_route_to_latlon(graph, route_nodes)
 
-        # Find the node on the graph closest to this longitude and latitudes
-        origin_node = convert_latlon_to_node(subgraph, origin)
-        dest_node = convert_latlon_to_node(subgraph, destination)
+# FOR TESTING PURPOSES ONLY
+# if __name__ == '__main__':
+#     # Initialize Flask app + DB context
+#     app = create_app()
 
-        # Get the shortest path that avoids blocked streets
-        route = get_shortest_path(subgraph, orig_node=origin_node, dest_node=dest_node, blocked_edges_set=blocked_edges_set)
+#     with app.app_context():
+#         # TODO: CACHE THIS - load blocked edges on startup of app
+#         blocked_edges_set = app.blocked_edges_set  # use cached set
 
-        # # Create large visualization
-        # visualize_large(nyc_graph, route)
+#         # Load in graph of map
+#         BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+#         GRAPH_PATH = os.path.join(BASE_DIR, 'data', 'nyc_graphml.graphml')
+#         nyc_graph = ox.load_graphml(GRAPH_PATH)
 
-        # Create zoomed-in visualization
-        visualize_zoomed(nyc_graph, route=route, origin_node=origin_node, destination_node=dest_node)
+#         # Define latitude and longitude of origin and destination
+#         origin = (40.681722, -73.832725)
+#         destination = (40.682725, -73.829194)
 
+#         # Find subgraph around origin/destination
+#         subgraph = get_subgraph(nyc_graph, origin, destination, margin=0.02)
 
-        #### SECOND ONE:
-        # Define latitude and longitude of origin and destination
-        origin = (40.672664, -73.970471)
-        destination = (40.674402, -73.975413)
+#         # Find the node on the graph closest to this longitude and latitudes
+#         origin_node = convert_latlon_to_node(subgraph, origin)
+#         dest_node = convert_latlon_to_node(subgraph, destination)
 
-        # Find subgraph around origin/destination
-        subgraph = get_subgraph(nyc_graph, origin, destination, margin=0.02)
+#         # Get the shortest path that avoids blocked streets
+#         route = get_shortest_path(subgraph, orig_node=origin_node, dest_node=dest_node, blocked_edges_set=blocked_edges_set)
 
-        # Find the node on the graph closest to this longitude and latitudes
-        origin_node = convert_latlon_to_node(subgraph, origin)
-        dest_node = convert_latlon_to_node(subgraph, destination)
+#         # # Create large visualization
+#         # visualize_large(nyc_graph, route)
 
-        # Get the shortest path that avoids blocked streets
-        route = get_shortest_path(subgraph, orig_node=origin_node, dest_node=dest_node, blocked_edges_set=blocked_edges_set)
-
-        # # Create large visualization
-        # visualize_large(nyc_graph, route)
-
-        # Create zoomed-in visualization
-        visualize_zoomed(nyc_graph, route=route, origin_node=origin_node, destination_node=dest_node)
-
-
+#         # Create zoomed-in visualization
+#         visualize_zoomed(nyc_graph, route=route, origin_node=origin_node, destination_node=dest_node)
 
 
+#         #### SECOND ONE:
+#         # Define latitude and longitude of origin and destination
+#         origin = (40.672664, -73.970471)
+#         destination = (40.674402, -73.975413)
+
+#         # Find subgraph around origin/destination
+#         subgraph = get_subgraph(nyc_graph, origin, destination, margin=0.02)
+
+#         # Find the node on the graph closest to this longitude and latitudes
+#         origin_node = convert_latlon_to_node(subgraph, origin)
+#         dest_node = convert_latlon_to_node(subgraph, destination)
+
+#         # Get the shortest path that avoids blocked streets
+#         route = get_shortest_path(subgraph, orig_node=origin_node, dest_node=dest_node, blocked_edges_set=blocked_edges_set)
+
+#         # # Create large visualization
+#         # visualize_large(nyc_graph, route)
+
+#         # Create zoomed-in visualization
+#         visualize_zoomed(nyc_graph, route=route, origin_node=origin_node, destination_node=dest_node)
