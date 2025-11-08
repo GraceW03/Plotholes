@@ -1,8 +1,6 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import UploadBox from "@/components/UploadBox";
-import ReportDrawer from "@/components/ReportDrawer";
 
 const NYCMap = dynamic(() => import("@/components/NYCMap"), {
   ssr: false,
@@ -15,9 +13,14 @@ const NYCMap = dynamic(() => import("@/components/NYCMap"), {
 
 export default function MapPage() {
   return (
+<<<<<<< HEAD
     <div className="h-screen w-full relative">
       <NYCMap />
       <ReportDrawer />
+=======
+    <div className="h-screen w-full">
+      <NYCMap />
+>>>>>>> c839520cab61fba866086f63098057a3631cdf23
     </div>
   );
 }
