@@ -1,112 +1,114 @@
 "use client";
-import { useState, ChangeEvent } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import { Upload, X, Plus } from "lucide-react";
+
+import { useState } from "react";
+
+type Coords = { lat: number; lng: number } | null;
 
 export default function ReportDrawer() {
-  const [open, setOpen] = useState(false);
-  const [preview, setPreview] = useState<string | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [coords, setCoords] = useState<Coords>(null);
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<any>(null);
 
-  const handleFile = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => setPreview(reader.result as string);
-      reader.readAsDataURL(file);
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!file || !coords) {
+      alert("Please select a file and location first!");
+      return;
+    }
+
+    setLoading(true);
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("lat", String(coords.lat));
+    formData.append("lng", String(coords.lng));
+
+    try {
+      const res = await fetch("/api/report", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+      setResult(data);
+
+      if (data.error) {
+        console.error(data.error);
+        alert("❌ Upload failed. Check console.");
+      } else {
+        alert(`✅ ${data.severity?.toUpperCase() || "UNKNOWN"} pothole detected!`);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("❌ Something went wrong while uploading.");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <>
-      {/* Floating Action Button */}
-      <motion.button
-        whileHover={{ scale: 1.1 }}
-        whileTap={{ scale: 0.95 }}
-        onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 z-[1000] rounded-full bg-[#FF6B6B] text-white p-4 shadow-lg hover:bg-[#ff8080]"
-      >
-        <Plus className="w-6 h-6" />
-      </motion.button>
+    <div className="absolute top-4 left-4 bg-white/80 backdrop-blur-md p-4 rounded-2xl shadow-xl w-[320px] z-[1000]">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+        <label className="font-semibold text-sm text-gray-700">Upload a road photo:</label>
+        <input
+          type="file"
+          accept="image/*"
+          onChange={(e) => setFile(e.target.files?.[0] || null)}
+          className="border border-gray-300 rounded-lg p-2 text-sm"
+        />
 
-      {/* Slide-in drawer */}
-      <AnimatePresence>
-        {open && (
-          <>
-            {/* backdrop */}
-            <motion.div
-              onClick={() => setOpen(false)}
-              className="fixed inset-0 bg-black/20 backdrop-blur-sm z-[999]"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-            />
+        <label className="font-semibold text-sm text-gray-700">Coordinates:</label>
+        <div className="flex gap-2">
+          <input
+            type="number"
+            step="any"
+            placeholder="lat"
+            value={coords?.lat ?? ""}
+            onChange={(e) =>
+              setCoords({
+                ...(coords ?? { lat: 0, lng: 0 }),
+                lat: parseFloat(e.target.value),
+              })
+            }
+            className="flex-1 border border-gray-300 rounded-lg p-2 text-sm"
+          />
+          <input
+            type="number"
+            step="any"
+            placeholder="lng"
+            value={coords?.lng ?? ""}
+            onChange={(e) =>
+              setCoords({
+                ...(coords ?? { lat: 0, lng: 0 }),
+                lng: parseFloat(e.target.value),
+              })
+            }
+            className="flex-1 border border-gray-300 rounded-lg p-2 text-sm"
+          />
+        </div>
 
-            {/* panel */}
-            <motion.div
-              initial={{ x: "100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "100%" }}
-              transition={{ type: "spring", stiffness: 90 }}
-              className="fixed top-0 right-0 h-full w-[350px] bg-white shadow-2xl z-[1001] flex flex-col p-6 overflow-y-auto"
-            >
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold text-[#2B2B2B]">
-                  Report a Plothole 🕳️
-                </h2>
-                <button onClick={() => setOpen(false)}>
-                  <X className="w-6 h-6 text-[#555]" />
-                </button>
-              </div>
+        <button
+          type="submit"
+          disabled={loading}
+          className="mt-2 bg-[#FFADAD] hover:bg-[#ff9f9f] text-[#2B2B2B] font-semibold py-2 rounded-full shadow transition"
+        >
+          {loading ? "Analyzing..." : "Submit Report"}
+        </button>
 
-              {/* Upload area */}
-              <label className="relative flex flex-col items-center justify-center border-2 border-dashed border-[#FFD6A5] rounded-xl p-6 bg-[#FFF9F3] hover:bg-[#fff4e8] transition cursor-pointer">
-                {!preview ? (
-                  <>
-                    <Upload className="w-8 h-8 text-[#FF6B6B] mb-2" />
-                    <p className="text-[#2B2B2B] font-semibold">
-                      Upload pothole photo
-                    </p>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleFile}
-                      className="absolute inset-0 opacity-0 cursor-pointer"
-                    />
-                  </>
-                ) : (
-                  <div className="flex flex-col items-center w-full">
-                    <img
-                      src={preview}
-                      alt="preview"
-                      className="w-full h-40 object-cover rounded-lg shadow"
-                    />
-                    <button
-                      onClick={() => setPreview(null)}
-                      className="mt-3 text-sm text-[#FF6B6B] underline"
-                    >
-                      Remove photo
-                    </button>
-                  </div>
-                )}
-              </label>
-
-              {/* Optional description */}
-              <textarea
-                placeholder="Describe the location or issue..."
-                className="mt-5 p-3 rounded-lg border border-[#ddd] text-sm focus:outline-none focus:ring-2 focus:ring-[#FFADAD]"
-              />
-
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                onClick={() => setOpen(false)}
-                className="mt-6 bg-[#B9FBC0] font-bold text-[#2B2B2B] py-3 rounded-lg shadow hover:bg-[#a4e9ad] transition"
-              >
-                Submit
-              </motion.button>
-            </motion.div>
-          </>
+        {result && !result.error && (
+          <div className="mt-3 text-sm text-gray-700">
+            <p>
+              <b>Severity:</b> {result.severity}
+            </p>
+            <p>
+              <b>Confidence:</b>{" "}
+              {result.confidence
+                ? `${(result.confidence * 100).toFixed(1)}%`
+                : "N/A"}
+            </p>
+          </div>
         )}
-      </AnimatePresence>
-    </>
+      </form>
+    </div>
   );
 }
