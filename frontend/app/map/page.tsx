@@ -15,9 +15,9 @@ const NYCMap = dynamic(() => import("@/components/NYCMap"), {
 
 export default function MapPage() {
   return (
-    <div className="h-[70vh] w-full">
-        <NYCMap />
-        <ReportDrawer />
+    <div className="h-screen w-full relative">
+      <NYCMap />
+      <ReportDrawer />
     </div>
   );
 }
