@@ -1,1 +1,81 @@
+# Environment variables
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Python virtual environments
+venv/
+env/
+ENV/
+.venv/
+.ENV/
+virtualenv/
+
+# Python cache and compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+.pytest_cache/
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+plotholes.db
+
+# Upload directories
+uploads/
+temp/
+static/uploads/
+
+# Model files (AI models can be large)
+models/*.pt
+models/*.pth
+models/*.onnx
+models/*.h5
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Flask/Python specific
+instance/
+.webassets-cache
+.coverage
+htmlcov/
+.tox/
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# Logs
+*.log
+logs/
+
+# Flask session files
+flask_session/
+
+# Temporary files
+*.tmp
+*.temp
+
 node_modules/
