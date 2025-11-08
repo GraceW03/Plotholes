@@ -1,7 +1,6 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import UploadBox from "@/components/UploadBox";
 import ReportDrawer from "@/components/ReportDrawer";
 
 const NYCMap = dynamic(() => import("@/components/NYCMap"), {

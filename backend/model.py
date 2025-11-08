@@ -14,23 +14,25 @@ model.overrides["agnostic_nms"] = False
 model.overrides["max_det"] = 1000
 
 def analyze_image(image_url: str):
-    """
-    Downloads an image and returns pothole detection info.
-    """
     try:
+        print(f"[MODEL] Fetching image from: {image_url}")
         response = requests.get(image_url)
         response.raise_for_status()
         img = Image.open(BytesIO(response.content)).convert("RGB")
+        print("[MODEL] Image downloaded successfully")
 
         results = model.predict(img)
+        print(f"[MODEL] YOLO results: {results}")
 
         if not results or len(results[0].boxes) == 0:
+            print("[MODEL] No potholes detected.")
             return {"pothole": False, "severity": "none", "confidence": 0.0}
 
         boxes = results[0].boxes.data.cpu().numpy()
         confs = boxes[:, 4]
         avg_conf = float(np.mean(confs))
         num_detections = len(confs)
+        print(f"[MODEL] Found {num_detections} detections, avg conf {avg_conf}")
 
         if num_detections < 3:
             severity = "minor"

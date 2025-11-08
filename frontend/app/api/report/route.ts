@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
       throw new Error("Failed to upload to Supabase Storage");
     }
 
-    const imageUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/${uploaded.path}`;
+    const imageUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/plothole-uploads/${uploaded.path}`;
 
     // ---- call Python backend model ----
     const analyzeRes = await fetch(process.env.PYTHON_API_URL || "http://127.0.0.1:8000/analyze", {
