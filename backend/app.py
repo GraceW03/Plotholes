@@ -7,9 +7,9 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import os
 from dotenv import load_dotenv
-from database import db, migrate
+from backend.database import db, migrate
 from sqlalchemy import text
-from services.heatmap import *
+from backend.services.heatmap import *
 import math
 
 # Load environment variables
@@ -29,7 +29,7 @@ def create_app():
     app = Flask(__name__)
     
     # Configuration
-    from config import config
+    from backend.config import config
     app.config.from_object(config['production'])
     
     # Initialize extensions
@@ -41,6 +41,16 @@ def create_app():
         "http://localhost:3000",  # Next.js frontend
         "http://127.0.0.1:3000"
     ])
+
+    # -------------------------------
+    # Cache blocked edges at startup
+    # -------------------------------
+    with app.app_context():
+        from backend.models.BlockedEdges import BlockedEdges
+        app.blocked_edges_set = set(
+            (e.u, e.v, e.k) for e in BlockedEdges.query.all()
+        )
+        print(f"Cached {len(app.blocked_edges_set)} blocked edges")
     
     
     # Base route
