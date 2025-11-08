@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Layers, MapPin, Grid3X3, Eye, EyeOff } from "lucide-react";
 
-export type HeatmapMode = 'off' | 'individual' | 'grid';
+export type HeatmapMode = 'off' | 'individual' | 'neighborhoods';
 
 interface HeatmapControlsProps {
   mode: HeatmapMode;
@@ -29,13 +29,13 @@ export default function HeatmapControls({ mode, onModeChange, isLoading = false 
       description: 'Individual issue severity',
       color: 'text-red-500'
     },
-    // {
-    //   key: 'grid' as HeatmapMode,
-    //   label: 'Grid',
-    //   icon: Grid3X3,
-    //   description: 'Grid zone risk levels',
-    //   color: 'text-orange-500'
-    // }
+    {
+      key: 'neighborhoods' as HeatmapMode,
+      label: 'Neighborhoods',
+      icon: Grid3X3,
+      description: 'Neighborhood risk levels',
+      color: 'text-orange-500'
+    }
   ];
 
   return (
@@ -95,7 +95,7 @@ export default function HeatmapControls({ mode, onModeChange, isLoading = false 
           <div className="mt-3 pt-2 border-t border-gray-100">
             <div className="text-xs text-gray-500 px-1">
               {mode === 'individual' && 'Shows severity of individual street issues'}
-              {mode === 'grid' && 'Shows aggregated risk levels by area'}
+              {mode === 'neighborhoods' && 'Shows aggregated risk levels by neighborhood'}
               {mode === 'off' && 'Heatmap is currently disabled'}
             </div>
           </div>

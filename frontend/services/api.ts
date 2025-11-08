@@ -14,26 +14,23 @@ export interface Issue {
   incident_address: string;
 }
 
-export interface GridZone {
-  id: string;
-  bounds: {
-    min_lat: number;
-    min_lng: number;
-    max_lat: number;
-    max_lng: number;
+export interface NeighborhoodFeature {
+  type: 'Feature';
+  properties: {
+    neighborhood: string;
+    borough: string;
+    issue_count: number;
+    avg_severity: number;
+    max_severity: number;
+    risk_score: number;
+    risk_level: string;
+    color: string;
+    opacity: number;
   };
-  center: {
-    lat: number;
-    lng: number;
+  geometry: {
+    type: 'Polygon';
+    coordinates: number[][][];
   };
-  issue_count: number;
-  avg_severity: number;
-  max_severity: number;
-  risk_score: number;
-  risk_level: string;
-  accessibility_score: number;
-  color: string;
-  boroughs: string[];
 }
 
 export interface IssuesResponse {
@@ -41,11 +38,10 @@ export interface IssuesResponse {
   count: number;
 }
 
-export interface GridZonesResponse {
-  zones: GridZone[];
+export interface NeighborhoodBoundariesResponse {
+  type: 'FeatureCollection';
+  features: NeighborhoodFeature[];
   count: number;
-  grid_size: number;
-  grid_size_km: number;
 }
 
 export const fetchIssues = async (): Promise<IssuesResponse> => {
@@ -61,15 +57,15 @@ export const fetchIssues = async (): Promise<IssuesResponse> => {
   }
 };
 
-export const fetchGridZones = async (gridSize: number = 0.01): Promise<GridZonesResponse> => {
+export const fetchNeighborhoodBoundaries = async (): Promise<NeighborhoodBoundariesResponse> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/grid-zones?grid_size=${gridSize}`);
+    const response = await fetch(`${API_BASE_URL}/api/neighborhood-boundaries`);
     if (!response.ok) {
-      throw new Error('Failed to fetch grid zones');
+      throw new Error('Failed to fetch neighborhood boundaries');
     }
     return await response.json();
   } catch (error) {
-    console.error('Error fetching grid zones:', error);
+    console.error('Error fetching neighborhood boundaries:', error);
     throw error;
   }
 };

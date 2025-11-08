@@ -1,6 +1,6 @@
 "use client";
 
-import { MapContainer, TileLayer, Marker, Popup, Rectangle } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import { useEffect, useState, useRef } from "react";
 import "leaflet/dist/leaflet.css";
 import "leaflet.heat";
@@ -8,7 +8,7 @@ import L from "leaflet";
 import { renderToString } from "react-dom/server";
 import { MapPin } from "lucide-react";
 import HeatmapControls, { HeatmapMode } from "./HeatmapControls";
-import { fetchIssues, fetchGridZones, Issue, GridZone } from "../services/api";
+import { fetchIssues, fetchNeighborhoodBoundaries, Issue, NeighborhoodFeature } from "../services/api";
 
 // Create a custom DivIcon using Lucide SVG
 const lucideMarkerIcon = L.divIcon({
@@ -23,12 +23,12 @@ export default function NYCMap() {
   const center: [number, number] = [40.7128, -74.0060]; // NYC coordinates
   const mapRef = useRef<L.Map | null>(null);
   const heatLayerRef = useRef<any>(null); // Using any for leaflet.heat layer
-  // const gridLayerRef = useRef<L.LayerGroup | null>(null);
+  const neighborhoodLayerRef = useRef<L.LayerGroup | null>(null);
 
   const [heatmapMode, setHeatmapMode] = useState<HeatmapMode>('off');
   const [isLoading, setIsLoading] = useState(false);
   const [issues, setIssues] = useState<Issue[]>([]);
-  // const [gridZones, setGridZones] = useState<GridZone[]>([]);
+  const [neighborhoods, setNeighborhoods] = useState<NeighborhoodFeature[]>([]);
 
   // Initialize map ref
   const handleMapReady = (map: L.Map) => {
@@ -48,18 +48,18 @@ export default function NYCMap() {
     }
   };
 
-  // Load grid zones data
-  // const loadGridZones = async () => {
-  //   try {
-  //     setIsLoading(true);
-  //     const data = await fetchGridZones();
-  //     setGridZones(data.zones);
-  //   } catch (error) {
-  //     console.error('Failed to load grid zones:', error);
-  //   } finally {
-  //     setIsLoading(false);
-  //   }
-  // };
+  // Load neighborhood boundaries data
+  const loadNeighborhoods = async () => {
+    try {
+      setIsLoading(true);
+      const data = await fetchNeighborhoodBoundaries();
+      setNeighborhoods(data.features);
+    } catch (error) {
+      console.error('Failed to load neighborhoods:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Create heatmap layer from issues
   const createIssuesHeatmap = () => {
@@ -96,59 +96,56 @@ export default function NYCMap() {
     mapRef.current.addLayer(heatLayerRef.current);
   };
 
-  // // Create grid zones layer
-  // const createGridZonesLayer = () => {
-  //   if (!mapRef.current || gridZones.length === 0) return;
+  // Create neighborhood polygons layer
+  const createNeighborhoodsLayer = () => {
+    if (!mapRef.current || neighborhoods.length === 0) return;
 
-  //   // Remove existing grid layer
-  //   if (gridLayerRef.current) {
-  //     mapRef.current.removeLayer(gridLayerRef.current);
-  //   }
+    // Remove existing neighborhood layer
+    if (neighborhoodLayerRef.current) {
+      mapRef.current.removeLayer(neighborhoodLayerRef.current);
+    }
 
-  //   gridLayerRef.current = L.layerGroup();
+    neighborhoodLayerRef.current = L.layerGroup();
 
-  //   gridZones.forEach(zone => {
-  //     // Create rectangle for grid zone
-  //     const bounds: L.LatLngBoundsExpression = [
-  //       [zone.bounds.min_lat, zone.bounds.min_lng],
-  //       [zone.bounds.max_lat, zone.bounds.max_lng]
-  //     ];
+    neighborhoods.forEach(feature => {
+      // Create polygon from GeoJSON geometry
+      const coordinates = feature.geometry.coordinates[0].map(coord => [coord[1], coord[0]] as [number, number]);
 
-  //     // Color based on risk level
-  //     const getZoneStyle = (riskLevel: string) => {
-  //       switch (riskLevel) {
-  //         case 'critical': return { color: '#990000', fillColor: '#990000', fillOpacity: 0.6 };
-  //         case 'high': return { color: '#ff0000', fillColor: '#ff0000', fillOpacity: 0.5 };
-  //         case 'medium': return { color: '#ff9900', fillColor: '#ff9900', fillOpacity: 0.4 };
-  //         case 'low': return { color: '#ffff00', fillColor: '#ffff00', fillOpacity: 0.3 };
-  //         default: return { color: '#00ff00', fillColor: '#00ff00', fillOpacity: 0.2 };
-  //       }
-  //     };
+      // Color based on risk level
+      const getNeighborhoodStyle = (riskLevel: string) => {
+        switch (riskLevel) {
+          case 'critical': return { color: '#990000', fillColor: '#990000', fillOpacity: 0.6 };
+          case 'high': return { color: '#ff0000', fillColor: '#ff0000', fillOpacity: 0.5 };
+          case 'medium': return { color: '#ff9900', fillColor: '#ff9900', fillOpacity: 0.4 };
+          case 'low': return { color: '#ffff00', fillColor: '#ffff00', fillOpacity: 0.3 };
+          default: return { color: '#00ff00', fillColor: '#00ff00', fillOpacity: 0.2 };
+        }
+      };
 
-  //     const rectangle = L.rectangle(bounds, {
-  //       ...getZoneStyle(zone.risk_level),
-  //       weight: 2
-  //     });
+      const polygon = L.polygon(coordinates, {
+        ...getNeighborhoodStyle(feature.properties.risk_level),
+        weight: 2
+      });
 
-  //     // Add popup with zone information
-  //     rectangle.bindPopup(`
-  //       <div class="p-2">
-  //         <h3 class="font-semibold text-lg">${zone.risk_level.toUpperCase()} Risk Zone</h3>
-  //         <div class="mt-2 space-y-1 text-sm">
-  //           <div><strong>Issues:</strong> ${zone.issue_count}</div>
-  //           <div><strong>Avg Severity:</strong> ${zone.avg_severity}/5</div>
-  //           <div><strong>Risk Score:</strong> ${zone.risk_score}</div>
-  //           <div><strong>Accessibility:</strong> ${zone.accessibility_score}/10</div>
-  //           ${zone.boroughs.length > 0 ? `<div><strong>Boroughs:</strong> ${zone.boroughs.join(', ')}</div>` : ''}
-  //         </div>
-  //       </div>
-  //     `);
+      // Add popup with neighborhood information
+      polygon.bindPopup(`
+        <div class="p-2">
+          <h3 class="font-semibold text-lg">${feature.properties.neighborhood || 'Unknown Neighborhood'}</h3>
+          <div class="mt-2 space-y-1 text-sm">
+            <div><strong>Borough:</strong> ${feature.properties.borough || 'Unknown'}</div>
+            <div><strong>Risk Level:</strong> ${feature.properties.risk_level.toUpperCase()}</div>
+            <div><strong>Issues:</strong> ${feature.properties.issue_count}</div>
+            <div><strong>Avg Severity:</strong> ${feature.properties.avg_severity.toFixed(1)}/5</div>
+            <div><strong>Risk Score:</strong> ${feature.properties.risk_score.toFixed(2)}</div>
+          </div>
+        </div>
+      `);
 
-  //     gridLayerRef.current!.addLayer(rectangle);
-  //   });
+      neighborhoodLayerRef.current!.addLayer(polygon);
+    });
 
-  //   mapRef.current.addLayer(gridLayerRef.current);
-  // };
+    mapRef.current.addLayer(neighborhoodLayerRef.current);
+  };
 
   // Handle heatmap mode changes
   useEffect(() => {
@@ -159,10 +156,10 @@ export default function NYCMap() {
       mapRef.current.removeLayer(heatLayerRef.current);
       heatLayerRef.current = null;
     }
-    // if (gridLayerRef.current) {
-    //   mapRef.current.removeLayer(gridLayerRef.current);
-    //   gridLayerRef.current = null;
-    // }
+    if (neighborhoodLayerRef.current) {
+      mapRef.current.removeLayer(neighborhoodLayerRef.current);
+      neighborhoodLayerRef.current = null;
+    }
 
     // Add appropriate layer based on mode
     switch (heatmapMode) {
@@ -173,13 +170,13 @@ export default function NYCMap() {
           createIssuesHeatmap();
         }
         break;
-      // case 'grid':
-      //   if (gridZones.length === 0) {
-      //     loadGridZones();
-      //   } else {
-      //     createGridZonesLayer();
-      //   }
-      //   break;
+      case 'neighborhoods':
+        if (neighborhoods.length === 0) {
+          loadNeighborhoods();
+        } else {
+          createNeighborhoodsLayer();
+        }
+        break;
       case 'off':
       default:
         // Layers already removed above
@@ -194,11 +191,11 @@ export default function NYCMap() {
     }
   }, [issues]);
 
-  // useEffect(() => {
-  //   if (heatmapMode === 'grid' && gridZones.length > 0) {
-  //     createGridZonesLayer();
-  //   }
-  // }, [gridZones]);
+  useEffect(() => {
+    if (heatmapMode === 'neighborhoods' && neighborhoods.length > 0) {
+      createNeighborhoodsLayer();
+    }
+  }, [neighborhoods]);
 
   return (
     <div className="relative h-full w-full">
