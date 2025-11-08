@@ -37,8 +37,7 @@ class Config:
 
 class ProductionConfig(Config):
     """Production configuration"""
-    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL') or \
-        'postgresql://username:password@localhost/plotholes_prod'
+    SQLALCHEMY_DATABASE_URI = os.environ.get('DATABASE_URL')
     
     # Production security settings
     SSL_DISABLE = False
@@ -55,8 +54,6 @@ class ProductionConfig(Config):
         app.logger.addHandler(syslog_handler)
 
 config = {
-    'development': DevelopmentConfig,
-    'testing': TestingConfig,
     'production': ProductionConfig,
-    'default': DevelopmentConfig
+    'default': ProductionConfig
 }

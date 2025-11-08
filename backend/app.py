@@ -5,24 +5,20 @@ Main Flask application entry point
 
 from flask import Flask, jsonify
 from flask_cors import CORS
-from flask_sqlalchemy import SQLAlchemy
-from flask_migrate import Migrate
 import os
 from dotenv import load_dotenv
+from database import db, migrate
 
 # Load environment variables
 load_dotenv()
-
-# Initialize extensions
-db = SQLAlchemy()
-migrate = Migrate()
 
 def create_app(config_name):
     """Application factory pattern"""
     app = Flask(__name__)
     
     # Configuration
-    app.config.from_object(f'config.{config_name.title()}Config')
+    from config import config
+    app.config.from_object(config[config_name])
     
     # Initialize extensions
     db.init_app(app)
@@ -31,23 +27,23 @@ def create_app(config_name):
     # Enable CORS
     CORS(app, origins=[
         "http://localhost:3000",  # Next.js frontend
-        "http://127.0.0.1:3000",
-        "https://your-mlh-domain.com"  # MLH hosted domain
+        "http://127.0.0.1:3000"
     ])
     
     # Register blueprints
     from routes.infrastructure import infrastructure_bp
     from routes.photos import photos_bp
-    from routes.geospatial import geospatial_bp
-    from routes.analysis import analysis_bp
-    from routes.reporting import reporting_bp
     
     app.register_blueprint(infrastructure_bp, url_prefix='/api/infrastructure')
     app.register_blueprint(photos_bp, url_prefix='/api/photos')
-    app.register_blueprint(geospatial_bp, url_prefix='/api/geospatial')
-    app.register_blueprint(analysis_bp, url_prefix='/api/analysis')
-    app.register_blueprint(reporting_bp, url_prefix='/api/reporting')
     
+    # Base route
+    @app.route('/')
+    def on_start():
+        return jsonify({
+            'message': 'hi'
+        })
+
     # Health check endpoint
     @app.route('/api/health')
     def health_check():

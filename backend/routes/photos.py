@@ -9,7 +9,7 @@ import uuid
 from PIL import Image
 import cv2
 import numpy as np
-from app import db
+from database import db
 from models.infrastructure import InfrastructureIssue, IssuePhoto
 from services.cv_analyzer import CVAnalyzer
 from datetime import datetime

@@ -5,7 +5,7 @@ Geospatial processing service for location analysis and path planning
 from typing import List, Dict, Any, Tuple
 import math
 from sqlalchemy import and_, func
-from app import db
+from database import db
 from models.infrastructure import InfrastructureIssue
 
 class GeospatialProcessor:

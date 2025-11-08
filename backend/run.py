@@ -5,7 +5,7 @@ Simple startup script for the Plotholes backend
 
 import os
 import sys
-from app import create_app
+from app import create_app, db
 
 def main():
     """Main startup function"""
@@ -29,7 +29,12 @@ def main():
         print("✅ Using SQLite database: plotholes.db")
     
     # Create Flask app
-    app = create_app('development')
+    print("creating app...")
+    app = create_app('production')
+
+    with app.app_context():
+        db.create_all()
+        print("Database tables created!")
     
     print("\n🏗️  Backend Features:")
     print("  📸 Mock photo upload with AI analysis")
@@ -44,7 +49,6 @@ def main():
     print(f"📊 Sample endpoints:")
     print(f"  • GET  /api/infrastructure/issues")
     print(f"  • POST /api/photos/upload")
-    print(f"  • GET  /api/geospatial/heat-map")
     print(f"  • GET  /api/reporting/dashboard-stats")
     
     print("\n" + "=" * 50)

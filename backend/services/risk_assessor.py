@@ -6,7 +6,7 @@ from typing import Dict, Any, List
 import math
 from datetime import datetime, timedelta
 from models.infrastructure import InfrastructureIssue
-from app import db
+from database import db
 from sqlalchemy import and_, func
 
 class RiskAssessor:
@@ -15,18 +15,14 @@ class RiskAssessor:
     def __init__(self):
         # Risk scoring weights
         self.ISSUE_TYPE_WEIGHTS = {
-            'pothole': 0.8,
-            'street light outage': 0.6,
-            'street light knockdown': 0.9,
-            'fallen tree or branches': 0.7,
-            'flooding': 0.9,
-            'lane divider': 0.4,
-            'pruning request': 0.3,
-            'planting request': 0.2,
-            'tree or stump removal': 0.5,
-            'wild animal issue': 0.3,
-            'domestic animal issue': 0.2,
-            'lost pet': 0.1
+            'Pothole': 0.8,
+            'Cave-in': 0.9,
+            'Defective Hardware': 0.6,
+            'Guard Rail - Street': 0.4,
+            'Blocked - Construction': 0.8,
+            'Failed Street Repair': 0.4,
+            'Rough, Pitted or Cracked Roads': 0.2,
+            'Dumpster - Construction Waste': 0.1
         }
         
         # Neighborhood risk multipliers (based on traffic density, population)

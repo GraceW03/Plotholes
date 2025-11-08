@@ -2,38 +2,64 @@
 Infrastructure issue models based on Boston 311 data
 """
 
-from flask_sqlalchemy import SQLAlchemy
+from database import db
 from geoalchemy2 import Geometry
 from datetime import datetime
 import uuid
-
-db = SQLAlchemy()
 
 class InfrastructureIssue(db.Model):
     """Infrastructure issue model based on Boston 311 data structure"""
     __tablename__ = 'infrastructure_issues'
     
     id = db.Column(db.String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    case_id = db.Column(db.String(50), unique=True, nullable=True)  # Original BCS case ID if imported
+    case_id = db.Column(db.String(50), unique=True, nullable=True)  # Original case ID if imported
+    unique_key = db.Column(db.String(50), unique=True, nullable=True)  # NYC DOT Unique Key
     
     # Issue details
     case_topic = db.Column(db.String(100), nullable=False)  # e.g., "Street Light Outage", "Pothole"
-    service_name = db.Column(db.String(100), nullable=False)
+    service_name = db.Column(db.String(100), nullable=True)  # Made nullable for DOT data
+    complaint_type = db.Column(db.String(100), nullable=True)  # NYC DOT Complaint Type
+    descriptor = db.Column(db.String(100), nullable=True)  # NYC DOT Descriptor (e.g., "Pothole")
     description = db.Column(db.Text, nullable=True)
     case_status = db.Column(db.String(50), default='Open')  # Open, In Progress, Closed
     priority = db.Column(db.String(20), default='medium')  # low, medium, high, critical
     
+    # Agency information
+    agency = db.Column(db.String(50), nullable=True)  # e.g., "DOT"
+    agency_name = db.Column(db.String(100), nullable=True)  # e.g., "Department of Transportation"
+    
+    # Resolution information
+    resolution_description = db.Column(db.Text, nullable=True)
+    resolution_action_updated_date = db.Column(db.DateTime, nullable=True)
+    due_date = db.Column(db.DateTime, nullable=True)
+    
     # Location data
     full_address = db.Column(db.String(255), nullable=True)
+    incident_address = db.Column(db.String(255), nullable=True)  # NYC DOT Incident Address
     street_number = db.Column(db.String(20), nullable=True)
     street_name = db.Column(db.String(100), nullable=True)
+    cross_street_1 = db.Column(db.String(100), nullable=True)  # NYC DOT Cross Street 1
+    cross_street_2 = db.Column(db.String(100), nullable=True)  # NYC DOT Cross Street 2
+    intersection_street_1 = db.Column(db.String(100), nullable=True)  # NYC DOT Intersection Street 1
+    intersection_street_2 = db.Column(db.String(100), nullable=True)  # NYC DOT Intersection Street 2
     zip_code = db.Column(db.String(10), nullable=True)
+    incident_zip = db.Column(db.String(10), nullable=True)  # NYC DOT Incident Zip
     neighborhood = db.Column(db.String(100), nullable=True)
+    city = db.Column(db.String(50), nullable=True)  # NYC DOT City
+    borough = db.Column(db.String(50), nullable=True)  # NYC DOT Borough
+    community_board = db.Column(db.String(50), nullable=True)  # NYC DOT Community Board
+    address_type = db.Column(db.String(50), nullable=True)  # NYC DOT Address Type (BLOCKFACE, INTERSECTION, etc.)
+    location_type = db.Column(db.String(50), nullable=True)  # NYC DOT Location Type
+    landmark = db.Column(db.String(255), nullable=True)  # NYC DOT Landmark
+    facility_type = db.Column(db.String(100), nullable=True)  # NYC DOT Facility Type
     
     # Geospatial data
     longitude = db.Column(db.Float, nullable=True)
     latitude = db.Column(db.Float, nullable=True)
-    location = db.Column(Geometry('POINT', srid=4326), nullable=True)
+    # location = db.Column(Geometry('POINT', srid=4326), nullable=True)  # Commented out until PostGIS is enabled
+    x_coordinate_state_plane = db.Column(db.String(50), nullable=True)  # NYC DOT X Coordinate
+    y_coordinate_state_plane = db.Column(db.String(50), nullable=True)  # NYC DOT Y Coordinate
+    bbl = db.Column(db.String(50), nullable=True)  # NYC DOT BBL (Borough, Block, Lot)
     
     # AI Analysis results
     risk_level = db.Column(db.String(20), default='unknown')  # low, medium, high, critical
@@ -56,18 +82,42 @@ class InfrastructureIssue(db.Model):
         data = {
             'id': self.id,
             'case_id': self.case_id,
+            'unique_key': self.unique_key,
             'case_topic': self.case_topic,
             'service_name': self.service_name,
+            'complaint_type': self.complaint_type,
+            'descriptor': self.descriptor,
             'description': self.description,
             'case_status': self.case_status,
             'priority': self.priority,
+            'agency': self.agency,
+            'agency_name': self.agency_name,
+            'resolution_description': self.resolution_description,
+            'resolution_action_updated_date': self.resolution_action_updated_date.isoformat() if self.resolution_action_updated_date else None,
+            'due_date': self.due_date.isoformat() if self.due_date else None,
             'full_address': self.full_address,
+            'incident_address': self.incident_address,
             'street_number': self.street_number,
             'street_name': self.street_name,
+            'cross_street_1': self.cross_street_1,
+            'cross_street_2': self.cross_street_2,
+            'intersection_street_1': self.intersection_street_1,
+            'intersection_street_2': self.intersection_street_2,
             'zip_code': self.zip_code,
+            'incident_zip': self.incident_zip,
             'neighborhood': self.neighborhood,
+            'city': self.city,
+            'borough': self.borough,
+            'community_board': self.community_board,
+            'address_type': self.address_type,
+            'location_type': self.location_type,
+            'landmark': self.landmark,
+            'facility_type': self.facility_type,
             'longitude': self.longitude,
             'latitude': self.latitude,
+            'x_coordinate_state_plane': self.x_coordinate_state_plane,
+            'y_coordinate_state_plane': self.y_coordinate_state_plane,
+            'bbl': self.bbl,
             'risk_level': self.risk_level,
             'confidence_score': self.confidence_score,
             'detected_objects': self.detected_objects,

@@ -2,17 +2,17 @@
 Database initialization script
 """
 
-from app import create_app, db
+from app import create_app
+from database import db
 from models.user import User
 from models.infrastructure import InfrastructureIssue, IssuePhoto, RiskAssessment
-from models.geospatial import GeoLocation, PathPlan
 from models.report import Report, ReportAnalytics
 from services.data_importer import DataImporter
 import os
 
 def init_database():
     """Initialize the database with tables and sample data"""
-    app = create_app()
+    app = create_app('production')
     
     with app.app_context():
         print("Creating database tables...")
@@ -69,7 +69,7 @@ def init_database():
 
 def reset_database():
     """Reset the database (drops all tables and recreates them)"""
-    app = create_app()
+    app = create_app('production')
     
     with app.app_context():
         print("WARNING: This will delete all data in the database!")
