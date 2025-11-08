@@ -1,9 +1,18 @@
 "use client";
 
-import { MapContainer, TileLayer, CircleMarker, Popup, useMapEvents } from "react-leaflet";
+import {
+  MapContainer,
+  TileLayer,
+  CircleMarker,
+  Popup,
+  Marker,
+  useMap,
+} from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import { useEffect, useRef, useState } from "react";
 import L from "leaflet";
+import { MapPin } from "lucide-react";
+import { renderToString } from "react-dom/server";
 import ReportDrawer from "@/components/ReportDrawer";
 
 interface Report {
@@ -16,29 +25,92 @@ interface Report {
   CreatedDate: string;
 }
 
+/** Bridge component: grabs the real Leaflet map instance and hands it to a callback */
+function MapRefBridge({ onInit }: { onInit: (map: L.Map) => void }) {
+  const map = useMap();
+  useEffect(() => {
+    onInit(map);
+  }, [map, onInit]);
+  return null;
+}
+
+/** Keeps `selecting` live during leaflet click events */
+function ClickHandler({
+  selecting,
+  onPick,
+  onSelectingChange,
+}: {
+  selecting: boolean;
+  onPick: (lat: number, lng: number) => void;
+  onSelectingChange?: (v: boolean) => void;
+}) {
+  const map = useMap();
+  const selectingRef = useRef(selecting);
+
+  useEffect(() => {
+    selectingRef.current = selecting;
+    const el = map.getContainer();
+    el.style.cursor = selecting ? "crosshair" : "";
+    return () => {
+      el.style.cursor = "";
+    };
+  }, [map, selecting]);
+
+  useEffect(() => {
+    const handleClick = (e: L.LeafletMouseEvent) => {
+      if (!selectingRef.current) return;
+      const { lat, lng } = e.latlng;
+      onPick(lat, lng);
+      onSelectingChange?.(false);
+    };
+    map.on("click", handleClick);
+    return () => map.off("click", handleClick);
+  }, [map, onPick, onSelectingChange]);
+
+  return null;
+}
+
 export default function NYCMap() {
   const [reports, setReports] = useState<Report[]>([]);
   const [clickedCoords, setClickedCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [selecting, setSelecting] = useState(false);
   const mapRef = useRef<L.Map | null>(null);
 
-  // load pothole data
+  // Load pothole dataset (optional)
   useEffect(() => {
     fetch("/data/nyc_potholes.geojson")
       .then((res) => res.json())
-      .then((data) => setReports(data))
-      .catch((err) => console.error("error loading data:", err));
+      .then(setReports)
+      .catch((err) => console.error("Failed to load data:", err));
   }, []);
 
-  // just opens drawer + fills coords (no marker)
-  function MapClickHandler() {
-    useMapEvents({
-      click(e) {
-        const { lat, lng } = e.latlng;
-        setClickedCoords({ lat, lng });
-      },
-    });
-    return null;
-  }
+  /** Lucide pin icon rendered as static HTML for Leaflet */
+  const lucidePinHTML = renderToString(<MapPin size={26} color="#FF6B6B" />);
+  const lucidePinIcon = L.divIcon({
+    html: `<div style="transform: translate(-50%, -100%); display:flex;align-items:center;justify-content:center;">${lucidePinHTML}</div>`,
+    className: "",
+    iconSize: [26, 26],
+    iconAnchor: [13, 26],
+  });
+
+  /** Called when user clicks the map in select mode */
+  const handlePick = (lat: number, lng: number) => {
+    setClickedCoords({ lat, lng });
+    setSelecting(false);
+    mapRef.current?.flyTo([lat, lng], 15);
+  };
+
+  /** Called from drawer when "Select on map" clicked */
+  const handleRequestSelect = () => {
+    setSelecting(true);
+    setClickedCoords(null);
+  };
+
+  /** Called when drawer geocodes or uses my location */
+  const handleDropMarker = (lat: number, lng: number) => {
+    setClickedCoords({ lat, lng });
+    mapRef.current?.flyTo([lat, lng], 15);
+  };
 
   return (
     <div className="h-screen w-full relative bg-[#FFF9F3]">
@@ -46,14 +118,17 @@ export default function NYCMap() {
         center={[40.7128, -74.006]}
         zoom={11}
         scrollWheelZoom
-        ref={mapRef}
         style={{ height: "100%", width: "100%" }}
       >
+        {/* hand the real map instance to mapRef without whenCreated/whenReady */}
+        <MapRefBridge onInit={(m) => (mapRef.current = m)} />
+
         <TileLayer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           attribution='&copy; <a href="https://openstreetmap.org">OpenStreetMap</a> contributors'
         />
 
+        {/* Render existing pothole reports */}
         {reports.map((r) => (
           <CircleMarker
             key={r.UniqueKey}
@@ -61,44 +136,58 @@ export default function NYCMap() {
             radius={4.5}
             pathOptions={{
               color:
-                r.Status === "Closed"
-                  ? "#9bf6ff"
-                  : r.Status === "Open"
-                  ? "#ffadad"
-                  : "#ffd6a5",
+                r.Status === "Closed" ? "#9bf6ff" :
+                r.Status === "Open"   ? "#ffadad" :
+                                         "#ffd6a5",
               fillOpacity: 0.9,
             }}
           >
             <Popup>
-              <div className="text-sm font-medium">
-                <b>{r.Descriptor}</b>
-                <br />
-                Status: {r.Status}
-                <br />
-                Borough: {r.Borough}
-                <br />
+              <div className="text-sm font-medium leading-tight">
+                <b>{r.Descriptor}</b><br />
+                Status: {r.Status}<br />
+                Borough: {r.Borough}<br />
                 Created: {r.CreatedDate}
               </div>
             </Popup>
           </CircleMarker>
         ))}
 
-        <MapClickHandler />
+        {/* 📍 Pin for selected or searched location */}
+        {clickedCoords && (
+          <Marker position={[clickedCoords.lat, clickedCoords.lng]} icon={lucidePinIcon}>
+            <Popup>
+              <div className="text-sm">
+                📍 Selected Location
+                <br />
+                ({clickedCoords.lat.toFixed(4)}, {clickedCoords.lng.toFixed(4)})
+              </div>
+            </Popup>
+          </Marker>
+        )}
+
+        <ClickHandler selecting={selecting} onPick={handlePick} onSelectingChange={setSelecting} />
       </MapContainer>
 
-      {/* header */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] bg-white/70 backdrop-blur-md px-5 py-2 rounded-full text-sm font-semibold shadow">
-        🗽 NYC Plothole Map — {reports.length} reports
+      {/* Header */}
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] bg-white/80 backdrop-blur-md px-6 py-2 rounded-full text-sm sm:text-base font-semibold text-[#2B2B2B] shadow-md border border-[#f0f0f0]">
+        🗽 NYC Pothole Reports •{" "}
+        <span className="font-bold text-[#FF6B6B]">{reports.length}</span>{" "}
+        {reports.length === 1 ? "report" : "reports"}
       </div>
 
-      {/* drawer */}
+      {/* Selection banner */}
+      {selecting && (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] bg-[#FFD6A5] text-[#2B2B2B] px-4 py-2 rounded-full text-sm font-semibold shadow-md border border-[#f0e3c0]">
+          👆 Click anywhere on the map to choose a location
+        </div>
+      )}
+
+      {/* Drawer */}
       <ReportDrawer
         clickedCoords={clickedCoords}
-        onDropMarker={(lat, lng) => {
-          // no marker or popup — just center
-          const map = mapRef.current;
-          if (map) map.flyTo([lat, lng], 14);
-        }}
+        onDropMarker={handleDropMarker}
+        onRequestSelect={handleRequestSelect}
       />
     </div>
   );

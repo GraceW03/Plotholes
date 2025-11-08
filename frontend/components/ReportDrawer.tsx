@@ -10,9 +10,14 @@ type Coords = { lat: number; lng: number } | null;
 interface ReportDrawerProps {
   onDropMarker?: (lat: number, lng: number) => void;
   clickedCoords?: { lat: number; lng: number } | null;
+  onRequestSelect: () => void; // ✅ REQUIRED now
 }
 
-export default function ReportDrawer({ onDropMarker, clickedCoords }: ReportDrawerProps) {
+export default function ReportDrawer({
+  onDropMarker,
+  clickedCoords,
+  onRequestSelect,
+}: ReportDrawerProps) {
   const [open, setOpen] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [coords, setCoords] = useState<Coords>(null);
@@ -20,6 +25,13 @@ export default function ReportDrawer({ onDropMarker, clickedCoords }: ReportDraw
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [dragOver, setDragOver] = useState(false);
+
+  // ✅ simplified - just call it directly
+  const handleRequestSelect = () => {
+    console.log("🗺️ Select on map clicked");
+    onRequestSelect(); // call parent's handler
+    setOpen(false); // close drawer so user can see map
+  };
 
   // 🌎 reverse-geocode coords → readable address
   const fetchAddress = async (lat: number, lng: number) => {
@@ -68,9 +80,13 @@ export default function ReportDrawer({ onDropMarker, clickedCoords }: ReportDraw
   // 🚀 Submit
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!file || !coords) return alert("Please select a file and location!");
+    if (!file) return alert("Please upload an image first!");
+    if (!coords?.lat || !coords?.lng)
+      return alert("Please enter or choose a location before submitting!");
 
     setLoading(true);
+    setResult(null);
+
     const formData = new FormData();
     formData.append("file", file);
     formData.append("lat", String(coords.lat));
@@ -88,9 +104,10 @@ export default function ReportDrawer({ onDropMarker, clickedCoords }: ReportDraw
           origin: { y: 0.7 },
           colors: ["#FFADAD", "#FFD6A5", "#B9FBC0", "#CDB4DB"],
         });
+        onDropMarker?.(coords.lat, coords.lng);
+      } else {
+        alert("Server error: " + (data.error || "Unknown error"));
       }
-
-      if (onDropMarker && coords) onDropMarker(coords.lat, coords.lng);
     } catch (err) {
       console.error(err);
       alert("Upload failed — check console.");
@@ -222,13 +239,24 @@ export default function ReportDrawer({ onDropMarker, clickedCoords }: ReportDraw
                   />
                 </div>
 
-                <button
-                  type="button"
-                  onClick={handleUseMyLocation}
-                  className="text-xs text-[#FF6B6B] font-semibold underline hover:text-[#ff8585] self-start"
-                >
-                  📍 Use my current location
-                </button>
+                <div className="flex flex-col gap-1">
+                  <button
+                    type="button"
+                    onClick={handleUseMyLocation}
+                    className="text-xs text-[#FF6B6B] font-semibold underline hover:text-[#ff8585] self-start"
+                  >
+                    📍 Use my current location
+                  </button>
+
+                  {/* ✅ Fixed handler */}
+                  <button
+                    type="button"
+                    onClick={handleRequestSelect}
+                    className="text-xs text-[#FF6B6B] font-semibold underline hover:text-[#ff8585] self-start"
+                  >
+                    🗺️ Select location on map
+                  </button>
+                </div>
               </div>
 
               {/* Submit */}
