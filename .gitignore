@@ -6,6 +6,7 @@
 .env.production
 
 # Python virtual environments
+.venv
 venv/
 env/
 ENV/
@@ -77,5 +78,8 @@ flask_session/
 # Temporary files
 *.tmp
 *.temp
+
+# osmnx files
+backend/cache
 
 node_modules/
