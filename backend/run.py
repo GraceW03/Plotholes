@@ -6,6 +6,7 @@ Simple startup script for the Plotholes backend
 import os
 import sys
 from app import create_app, db
+from services import *
 
 def main():
     """Main startup function"""
@@ -30,7 +31,7 @@ def main():
     
     # Create Flask app
     print("creating app...")
-    app = create_app('production')
+    app = create_app()
 
     with app.app_context():
         db.create_all()

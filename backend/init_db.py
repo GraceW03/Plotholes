@@ -4,10 +4,6 @@ Database initialization script
 
 from app import create_app
 from database import db
-from models.user import User
-from models.infrastructure import InfrastructureIssue, IssuePhoto, RiskAssessment
-from models.report import Report, ReportAnalytics
-from services.data_importer import DataImporter
 import os
 
 def init_database():
@@ -34,32 +30,7 @@ def init_database():
             os.makedirs(models_dir)
             print(f"Created models directory: {models_dir}")
         
-        # Check if we should import Boston 311 data
-        csv_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'filtered_data.csv')
-        
-        if os.path.exists(csv_path):
-            print(f"Found Boston 311 data at {csv_path}")
-            import_choice = input("Import Boston 311 data? (y/n): ").lower().strip()
-            
-            if import_choice == 'y':
-                print("Importing Boston 311 data...")
-                importer = DataImporter()
-                stats = importer.import_boston_311_csv(csv_path)
-                
-                print(f"Import completed!")
-                print(f"  Total rows: {stats['total_rows']}")
-                print(f"  Imported: {stats['imported']}")
-                print(f"  Skipped: {stats['skipped']}")
-                print(f"  Errors: {stats['errors']}")
-                
-                if stats['error_details']:
-                    print("Error details:")
-                    for error in stats['error_details'][:5]:  # Show first 5 errors
-                        print(f"  - {error}")
-        else:
-            print(f"Boston 311 data file not found at {csv_path}")
-            print("You can import data later using the DataImporter service")
-        
+    
         print("\nDatabase initialization complete!")
         print("\nNext steps:")
         print("1. Update config.py with your database credentials")
