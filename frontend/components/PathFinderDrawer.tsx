@@ -79,7 +79,7 @@ useEffect(() => {
           animate={{ x: 0 }}
           exit={{ x: -350 }}
           transition={{ type: "spring", stiffness: 120, damping: 20 }}
-          className="fixed top-0 left-0 h-full w-[340px] z-[1000] bg-white/95 backdrop-blur-xl shadow-2xl rounded-r-3xl border-r border-gray-200 flex flex-col"
+          className="fixed top-0 left-0 h-full w-[340px] z-[1000] bg-white/95 backdrop-blur-xl shadow-2xl rounded-r-xl border-r border-gray-200 flex flex-col"
         >
           {/* header */}
           <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100">
@@ -113,7 +113,8 @@ useEffect(() => {
                   onChange={(e) =>
                     setOrigin((prev) => ({ lat: parseFloat(e.target.value), lng: prev?.lng ?? 0 }))
                   }
-                  className="flex-1 border border-gray-300 rounded-md px-3 py-1.5 text-sm"
+                  className="w-[140px] flex-1 border border-gray-300 rounded-md px-3 py-1.5 text-sm text-gray-800 bg-white placeholder-gray-400 focus:ring-2 focus:ring-indigo-400 focus:outline-none"
+
                 />
                 <input
                   type="number"
@@ -123,7 +124,8 @@ useEffect(() => {
                   onChange={(e) =>
                     setOrigin((prev) => ({ lat: prev?.lat ?? 0, lng: parseFloat(e.target.value) }))
                   }
-                  className="flex-1 border border-gray-300 rounded-md px-3 py-1.5 text-sm"
+                  className="w-[140px] flex-1 border border-gray-300 rounded-md px-3 py-1.5 text-sm text-gray-800 bg-white placeholder-gray-400 focus:ring-2 focus:ring-indigo-400 focus:outline-none"
+
                 />
               </div>
               <button
@@ -159,7 +161,7 @@ useEffect(() => {
                       lng: prev?.lng ?? 0,
                     }))
                   }
-                  className="flex-1 border border-gray-300 rounded-md px-3 py-1.5 text-sm"
+                  className="w-[140px] flex-1 border border-gray-300 rounded-md px-3 py-1.5 text-sm text-gray-800 bg-white placeholder-gray-400 focus:ring-2 focus:ring-indigo-400 focus:outline-none"
                 />
                 <input
                   type="number"
@@ -172,7 +174,7 @@ useEffect(() => {
                       lng: parseFloat(e.target.value),
                     }))
                   }
-                  className="flex-1 border border-gray-300 rounded-md px-3 py-1.5 text-sm"
+                  className="w-[140px] flex-1 border border-gray-300 rounded-md px-3 py-1.5 text-sm text-gray-800 bg-white placeholder-gray-400 focus:ring-2 focus:ring-indigo-400 focus:outline-none"
                 />
               </div>
               <button

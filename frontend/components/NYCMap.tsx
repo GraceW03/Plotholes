@@ -7,19 +7,18 @@ import "leaflet.heat";
 import L from "leaflet";
 import { MapPin, Menu, X, FilePlus, Flame, Grid3x3, Navigation } from "lucide-react";
 import { renderToString } from "react-dom/server";
-import HeatmapControls, { HeatmapMode } from "./HeatmapControls";
+import { HeatmapMode } from "./HeatmapControls";
 import { fetchIssues, fetchNeighborhoodBoundaries, fetchReports, Issue, NeighborhoodFeature, Report as UserReport } from "../services/api";
 import ReportDrawer from "@/components/ReportDrawer";
 import PathFinderDrawer from "@/components/PathFinderDrawer";
 
 interface Report {
-  UniqueKey: string;
-  Latitude: number;
-  Longitude: number;
-  Status: string;
-  Borough: string;
-  Descriptor: string;
-  CreatedDate: string;
+  id: string;
+  lat: number;
+  lng: number;
+  severity: number;
+  confidence: number;
+  created_at: string;
 }
 
 /** Bridge component: grabs the real Leaflet map instance and hands it to a callback */
@@ -77,6 +76,10 @@ function ClickHandler({
   return null;
 }
 
+function subtlePlural(count: number) {
+  return count === 1 ? " report" : " reports";
+}
+
 // Component to automatically fit map to route (but only once per route)
 function FitBounds({ route }: { route: [number, number][] }) {
   const map = useMap();
@@ -104,7 +107,7 @@ function FitBounds({ route }: { route: [number, number][] }) {
 }
 
 export default function NYCMap() {
-  const [reports] = useState<Report[]>([]);
+  const [reports, setReports] = useState<UserReport[]>([]);
   const [clickedCoords, setClickedCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [selecting, setSelecting] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -180,7 +183,6 @@ const handlePick = (lat: number, lng: number) => {
 
   const center: [number, number] = [40.7128, -74.0060];
   const [route, setRoute] = useState<[number, number][]>([]);
-  const [isLoading, setIsLoading] = useState(false);
   const [showNav, setShowNav] = useState(false);
 
   const fetchWithRetry = async (url: string, options = {}, retries = 3, delay = 1000) => {
@@ -256,12 +258,14 @@ const handlePick = (lat: number, lng: number) => {
       setReportsLoading(true);
       const data = await fetchReports();
       setUserReports(data.reports);
+      setReports(data.reports); // ✅ new line — update main reports array too
     } catch (error) {
       console.error('Failed to load reports:', error);
     } finally {
       setReportsLoading(false);
     }
   };
+
 
   const loadNeighborhoods = async () => {
     if (neighborhoodsLoading) return;
@@ -289,7 +293,7 @@ const handlePick = (lat: number, lng: number) => {
 
     const reportPoints: [number, number, number][] = userReports
       .filter(report => report.latitude && report.longitude)
-      .map(report => [report.latitude, report.longitude, Math.max(report.severity / 5, 0.4)]);
+      .map(report => [report.latitude, report.longitude, Math.max(report.severity / 3, 0.6)]);
 
     const allHeatPoints = [...issuePoints, ...reportPoints];
 
@@ -406,15 +410,80 @@ const handlePick = (lat: number, lng: number) => {
     }
   }, [neighborhoods]);
 
+  useEffect(() => {
+    loadReports();
+  }, []);
+
+const [showSplash, setShowSplash] = useState(true);
+const [fadeOut, setFadeOut] = useState(false);
+
+useEffect(() => {
+  // Step 1: show splash for ~2 seconds
+  const timer = setTimeout(() => {
+    setFadeOut(true); // trigger fade-out CSS
+    // Step 2: unmount after fade transition
+    setTimeout(() => setShowSplash(false), 800);
+  }, 2000);
+
+  return () => clearTimeout(timer);
+}, []);
+
+
+
   return (
     <div className="h-screen w-full relative bg-[#FFF9F3]">
-      {/* Loading indicator */}
-      {isLoading && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-white/90 px-4 py-2 rounded-lg shadow-lg z-[1000] flex items-center gap-2">
-          <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-          <span className="text-sm font-medium">Loading route...</span>
+      {/* Fancy NYC Loading Screen */}
+      {showSplash && (
+      <div
+        className={`absolute inset-0 z-[2000] flex flex-col items-center justify-center
+          bg-gradient-to-b from-[#FFF9F3] to-[#FFEEDA] backdrop-blur-md
+          transition-opacity duration-700 ease-out ${
+            fadeOut ? "opacity-0" : "opacity-100"
+          }`}
+      >
+        <div className="flex flex-col items-center animate-fadeIn">
+          <div className="text-6xl mb-3 animate-bounce">🚧</div>
+          <h1 className="text-2xl font-extrabold text-[#FF6B6B] tracking-tight">
+            Loading Plothole NYC
+          </h1>
+          <p className="text-sm text-gray-500 mt-1 mb-6">
+            Detecting potholes and rendering streets...
+          </p>
+
+          <div className="w-48 h-2 bg-gray-200 rounded-full overflow-hidden shadow-inner">
+            <div className="h-full bg-[#FF6B6B] animate-[progress_2s_ease-in-out_infinite]" />
+          </div>
         </div>
-      )}
+
+        <style jsx>{`
+          @keyframes progress {
+            0% {
+              transform: translateX(-100%);
+            }
+            50% {
+              transform: translateX(0%);
+            }
+            100% {
+              transform: translateX(100%);
+            }
+          }
+          .animate-fadeIn {
+            animation: fadeIn 1.2s ease-out;
+          }
+          @keyframes fadeIn {
+            from {
+              opacity: 0;
+              transform: translateY(10px);
+            }
+            to {
+              opacity: 1;
+              transform: translateY(0);
+            }
+          }
+        `}</style>
+      </div>
+    )}
+
 
       <MapContainer
         center={center}
@@ -439,26 +508,18 @@ const handlePick = (lat: number, lng: number) => {
 
         {/* Route Polyline & Pins */}
         {route.length > 0 && (
-          <>
-            <Marker position={route[0]} icon={lucideMarkerIcon}>
-              <Popup>📍 Origin</Popup>
-            </Marker>
-            <Marker position={route[route.length - 1]} icon={lucideMarkerIcon}>
-              <Popup>🎯 Destination</Popup>
-            </Marker>
-            <Polyline positions={route} color="#FF6B6B" weight={4} />
-          </>
+          <Polyline positions={route} color="#FF6B6B" weight={4} />
         )}
 
         {/* Temporary route selection pins */}
         {pathOrigin && (
           <Marker position={[pathOrigin.lat, pathOrigin.lng]} icon={lucideMarkerIcon}>
-            <Popup>Route Origin</Popup>
+            <Popup>📍 Origin</Popup>
           </Marker>
         )}
         {pathDestination && (
           <Marker position={[pathDestination.lat, pathDestination.lng]} icon={lucideMarkerIcon}>
-            <Popup>Route Destination</Popup>
+            <Popup>🎯 Destination</Popup>
           </Marker>
         )}
 
@@ -481,24 +542,36 @@ const handlePick = (lat: number, lng: number) => {
         {/* Render existing pothole reports */}
         {reports.map((r) => (
           <CircleMarker
-            key={r.UniqueKey}
-            center={[r.Latitude, r.Longitude]}
+            key={`${r.id}-${r.latitude}-${r.longitude}`}
+            center={[r.latitude, r.longitude]}
             radius={4.5}
             pathOptions={{
-              color: r.Status === "Closed" ? "#9bf6ff" : r.Status === "Open" ? "#ffadad" : "#ffd6a5",
+              color: "#FF6B6B",
               fillOpacity: 0.9,
             }}
           >
             <Popup>
               <div className="text-sm font-medium leading-tight">
-                <b>{r.Descriptor}</b><br />
-                Status: {r.Status}<br />
-                Borough: {r.Borough}<br />
-                Created: {r.CreatedDate}
+                <b>Reported Pothole</b><br />
+                Severity: {r.severity}<br />
+                Confidence: {(r.confidence * 100).toFixed(1)}%<br />
+                Created: {new Date(r.created_at).toLocaleString()}
               </div>
+
+              {/* 🖼️ Image Preview (if available) */}
+              {r.image_url && (
+                <div className="mt-2">
+                  <img
+                    src={r.image_url}
+                    alt="Pothole report"
+                    className="w-48 h-32 object-cover rounded-md border border-gray-300 shadow-sm"
+                  />
+                </div>
+              )}
             </Popup>
           </CircleMarker>
         ))}
+
 
         {/* Pin for selected location */}
         {clickedCoords && (
@@ -519,10 +592,11 @@ const handlePick = (lat: number, lng: number) => {
           onSelectingChange={selectingForPath === "none" ? setSelecting : undefined}
         />
       </MapContainer>
-
+      
       {/* Header */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] bg-white/80 backdrop-blur-md px-6 py-2 rounded-full text-sm font-semibold text-[#2B2B2B] shadow-md border border-[#f0f0f0]">
-        🗽 NYC Pothole Reports • <span className="font-bold text-[#FF6B6B]">{reports.length}</span> {reports.length === 1 ? 'report' : 'reports'}
+        🗽 NYC Pothole Reports • <span className="font-bold text-[#FF6B6B]">{reports.length}</span> 
+        {subtlePlural(reports.length)}
       </div>
 
       {/* Unified Navigation Menu */}
