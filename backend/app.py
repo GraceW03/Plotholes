@@ -7,10 +7,12 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 import os
 from dotenv import load_dotenv
-from database import db, migrate
+from .database import db, migrate
 from sqlalchemy import text
-from services.heatmap import *
+from .services.heatmap import *
 import math
+import osmnx as ox
+from .services.pathplanning import compute_final_route
 # from data import *
 from shapely.geometry import Point, Polygon as ShapelyPolygon
 import json
@@ -32,7 +34,7 @@ def create_app():
     app = Flask(__name__)
     
     # Configuration
-    from config import config
+    from .config import config
     app.config.from_object(config['production'])
     
     # Initialize extensions
@@ -44,7 +46,28 @@ def create_app():
         "http://localhost:3000",  # Next.js frontend
         "http://127.0.0.1:3000"
     ])
-    
+
+    with app.app_context():
+        # -------------------------------
+        # Cache blocked edges at startup
+        # -------------------------------
+        from .models.BlockedEdges import BlockedEdges
+        app.blocked_edges_set = set(
+            (e.u, e.v, e.k) for e in BlockedEdges.query.all()
+        )
+        print(f"Cached {len(app.blocked_edges_set)} blocked edges")
+
+        # -------------------------------
+        # Cache NYC map at startup
+        # -------------------------------
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        GRAPH_PATH = os.path.join(BASE_DIR, 'data', 'nyc_graphml.graphml')
+        # Check if file exists (optional, helps debug)
+        if not os.path.exists(GRAPH_PATH):
+            raise FileNotFoundError(f"GraphML file not found at {GRAPH_PATH}")
+
+        app.nyc_graph = ox.load_graphml(GRAPH_PATH)
+        print(f"Loaded NYC graph from {GRAPH_PATH}")
     
     # Base route
     @app.route('/')
@@ -63,7 +86,34 @@ def create_app():
         })
     
 
-    @app.route('/issues', methods=['GET'])
+    @app.route('/api/analyze', methods=['POST'])
+    def analyze():
+        try:
+            data = request.get_json()
+            if not data or 'image_path' not in data:
+                return failure_response("Missing image_path", 400)
+                
+            from model import analyze_image
+            
+            # Check if this is a test image
+            is_test = data.get('is_test', False)
+            if is_test:
+                # Use the local test image
+                import os
+                base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                image_path = os.path.join(base_dir, 'data', 'test_photos', data['image_path'])
+                result = analyze_image(image_path, is_url=False)
+            else:
+                # Use the provided URL
+                result = analyze_image(data['image_path'], is_url=True)
+                
+            return success_response(result)
+                
+        except Exception as e:
+            app.logger.error(f"Error in /api/analyze: {str(e)}")
+            return failure_response(str(e), 500)
+
+    @app.route('/api/issues', methods=['GET'])
     def get_issues():
         """Get open issues for heatmap - raw SQL, no models needed"""
         try:
@@ -112,7 +162,47 @@ def create_app():
         except Exception as e:
             return jsonify({'error': str(e)}), 500
         
+    @app.route('/api/route', methods=['POST'])
+    def compute_route():
+        """
+        Expects JSON payload:
+        {
+            "origin": [lat, lon],
+            "destination": [lat, lon]
+        }
+        """
+        data = request.get_json()
+        origin = data.get('origin')
+        destination = data.get('destination')
+
+        if not origin or not destination:
+            return failure_response("Missing origin or destination")
         
+        try:
+            # Validate input types
+            if not (isinstance(origin, list) and len(origin) == 2 and all(isinstance(x, (int, float)) for x in origin)):
+                return failure_response(f"Invalid origin coordinates: {origin}")
+            if not (isinstance(destination, list) and len(destination) == 2 and all(isinstance(x, (int, float)) for x in destination)):
+                return failure_response(f"Invalid destination coordinates: {destination}")
+            
+            route_coords = compute_final_route(
+                graph=app.nyc_graph, 
+                origin=origin,
+                destination=destination, 
+                blocked_edges_set=app.blocked_edges_set)
+            
+            if not route_coords:
+                return failure_response(
+                    "No available path avoiding blocked streets",
+                    404
+                )
+            
+            return success_response({
+                "route": route_coords,
+                "length": len(route_coords)
+            })
+        except Exception as e:
+            return failure_response(str(e), 500)
     @app.route('/api/neighborhood-boundaries', methods=['GET'])
     def get_neighborhood_boundaries():
         """Get NYC neighborhood boundaries with issue counts"""
@@ -336,6 +426,7 @@ def create_app():
     
     return app
 
+# Run using python -m backend.app
 if __name__ == '__main__':
     app = create_app()
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=3001)
