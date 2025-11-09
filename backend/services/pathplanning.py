@@ -83,7 +83,7 @@ def visualize_large(graph, route):
     Visualizes the route on the overall graph
     """
     if route:
-            ox.plot_graph_route(nyc_graph, route)
+            ox.plot_graph_route(graph, route)
     else:
         print("No route created")
 
@@ -110,8 +110,8 @@ def visualize_zoomed(graph, route, origin_node, destination_node):
     ax.set_ylim(min(route_ys) - margin, max(route_ys) + margin)
 
     # Plot origin and destination markers
-    ax.scatter(graph.nodes[origin_node]['x'], nyc_graph.nodes[origin_node]['y'], c='green', s=100, zorder=5)
-    ax.scatter(graph.nodes[destination_node]['x'], nyc_graph.nodes[destination_node]['y'], c='blue', s=100, zorder=5)
+    ax.scatter(graph.nodes[origin_node]['x'], graph.nodes[origin_node]['y'], c='green', s=100, zorder=5)
+    ax.scatter(graph.nodes[destination_node]['x'], graph.nodes[destination_node]['y'], c='blue', s=100, zorder=5)
 
     plot.pyplot.show()
  
