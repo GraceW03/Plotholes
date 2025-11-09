@@ -69,6 +69,20 @@ export async function POST(req: NextRequest) {
     const response = await analyzeRes.json();
     const modelData = response.data || response; // Handle both response formats
 
+    if(modelData.pothole) {
+      console.log("PLOTHOLE DETECTED");
+      try {
+        // Call Python backend to add to blocked_edges_set
+        await fetch(`${process.env.FLASK_API_URL || "http://127.0.0.1:3001"}/api/add_blocked_edge`, {
+          method: "POST", // you should change Flask endpoint to accept POST
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ latitude: lat, longitude: lng }),
+        });
+      } catch (err) {
+          console.error("Failed to update blocked_edges_set:", err);
+      }
+    }
+
     // ---- insert record into Supabase ----
     const { error: insertError } = await supabaseServer.from("reports").insert({
       image_url: imageUrl,
@@ -90,7 +104,7 @@ export async function POST(req: NextRequest) {
       image_url: imageUrl,
     });
   } catch (err) {
-    console.error("Error in /api/report:", err);
+    console.error("Error in /api/reports:", err);
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
 }

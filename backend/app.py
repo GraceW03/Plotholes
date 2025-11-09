@@ -16,6 +16,7 @@ from .services.pathplanning import compute_final_route
 # from data import *
 from shapely.geometry import Point, Polygon as ShapelyPolygon
 import json
+from datetime import datetime
 
 # Load environment variables
 load_dotenv()
@@ -93,7 +94,7 @@ def create_app():
             if not data or 'image_path' not in data:
                 return failure_response("Missing image_path", 400)
                 
-            from model import analyze_image
+            from .model import analyze_image
             
             # Check if this is a test image
             is_test = data.get('is_test', False)
@@ -136,23 +137,24 @@ def create_app():
                 LIMIT 5000
             """)
             
-            result = db.session.execute(query)
+            with db.engine.connect() as conn:
+                result = conn.execute(query)
             
-            # Convert to list of dictionaries
-            issues = []
-            for row in result:
-                issues.append({
-                    'unique_key': row.unique_key,
-                    'complaint_type': row.complaint_type,
-                    'descriptor': row.descriptor,
-                    'status': row.status,
-                    'borough': row.borough,
-                    'latitude': float(row.latitude) if row.latitude else None,
-                    'longitude': float(row.longitude) if row.longitude else None,
-                    'created_date': row.created_date,
-                    'severity': calculate_severity(row.descriptor),
-                    'incident_address': row.incident_address
-                })
+                # Convert to list of dictionaries
+                issues = []
+                for row in result:
+                    issues.append({
+                        'unique_key': row.unique_key,
+                        'complaint_type': row.complaint_type,
+                        'descriptor': row.descriptor,
+                        'status': row.status,
+                        'borough': row.borough,
+                        'latitude': float(row.latitude) if row.latitude else None,
+                        'longitude': float(row.longitude) if row.longitude else None,
+                        'created_date': row.created_date,
+                        'severity': calculate_severity(row.descriptor),
+                        'incident_address': row.incident_address
+                    })
             
             return success_response({
                 'issues': issues,
@@ -204,6 +206,30 @@ def create_app():
         except Exception as e:
             return failure_response(str(e), 500)
         
+    @app.route('/api/add_blocked_edge', methods=['POST'])
+    def add_blocked_edge():
+        data = request.get_json()
+        latitude = data.get('latitude')
+        longitude = data.get('longitude')
+
+        if latitude is None or longitude is None:
+            return failure_response("Longitude or latitude missing", 400)
+
+        u, v, k = ox.distance.nearest_edges(app.nyc_graph, X=longitude, Y=latitude)
+        if (u, v, k) not in app.blocked_edges_set:
+            blocked_edge = BlockedEdges(u=u, v=v, k=k, reported_at=datetime.now())
+
+            try:  
+                with db.session.begin():
+                    db.session.add(blocked_edge)
+            except Exception as e:
+                return failure_response(f"DB Error: {str(e)}", 500)
+
+            app.blocked_edges_set.append((u,v,k))
+            print(f"Blocked Edge added: {(u,v,k)}")
+
+        return success_response({'success': True})
+            
     @app.route('/api/neighborhood-boundaries', methods=['GET'])
     def get_neighborhood_boundaries():
         """Get NYC neighborhood boundaries with issue counts"""
@@ -237,37 +263,38 @@ def create_app():
             """)
             
             # Process NYC street data issues
-            result = db.session.execute(issues_query)
-            issues = []
-            for row in result:
-                try:
-                    lat = float(row.latitude)
-                    lng = float(row.longitude)
-                    severity = calculate_severity(row.descriptor)
-                    issues.append({'lat': lat, 'lng': lng, 'severity': severity})
-                except (ValueError, TypeError):
-                    continue
-            
-            # Process user reports
-            reports_result = db.session.execute(reports_query)
-            for row in reports_result:
-                try:
-                    lat = float(row.latitude)
-                    lng = float(row.longitude)
-                    
-                    # Convert severity string to numeric value
-                    severity_map = {
-                        'none': 1,
-                        'low': 2,
-                        'medium': 3,
-                        'high': 4,
-                        'critical': 5
-                    }
-                    numeric_severity = severity_map.get(row.severity.lower() if row.severity else 'none', 1)
-                    
-                    issues.append({'lat': lat, 'lng': lng, 'severity': numeric_severity})
-                except (ValueError, TypeError):
-                    continue
+            with db.engine.connect() as conn:
+                result = conn.execute(issues_query)
+                issues = []
+                for row in result:
+                    try:
+                        lat = float(row.latitude)
+                        lng = float(row.longitude)
+                        severity = calculate_severity(row.descriptor)
+                        issues.append({'lat': lat, 'lng': lng, 'severity': severity})
+                    except (ValueError, TypeError):
+                        continue
+                
+                # Process user reports
+                reports_result = conn.execute(reports_query)
+                for row in reports_result:
+                    try:
+                        lat = float(row.latitude)
+                        lng = float(row.longitude)
+                        
+                        # Convert severity string to numeric value
+                        severity_map = {
+                            'none': 1,
+                            'low': 2,
+                            'medium': 3,
+                            'high': 4,
+                            'critical': 5
+                        }
+                        numeric_severity = severity_map.get(row.severity.lower() if row.severity else 'none', 1)
+                        
+                        issues.append({'lat': lat, 'lng': lng, 'severity': numeric_severity})
+                    except (ValueError, TypeError):
+                        continue
             
             # Process each neighborhood
             enriched_neighborhoods = []
@@ -381,33 +408,34 @@ def create_app():
                 ORDER BY created_at DESC
             """)
             
-            result = db.session.execute(query)
-            
-            # Convert to list of dictionaries
-            reports = []
-            for row in result:
-                # Map severity string to numeric value for heatmap
-                severity_map = {
-                    'none': 1,
-                    'low': 2,
-                    'medium': 3,
-                    'high': 4,
-                    'critical': 5
-                }
+            with db.engine.connect() as conn:
+                result = conn.execute(query)
                 
-                numeric_severity = severity_map.get(row.severity.lower() if row.severity else 'none', 1)
+                # Convert to list of dictionaries
+                reports = []
+                for row in result:
+                    # Map severity string to numeric value for heatmap
+                    severity_map = {
+                        'none': 1,
+                        'low': 2,
+                        'medium': 3,
+                        'high': 4,
+                        'critical': 5
+                    }
+                    
+                    numeric_severity = severity_map.get(row.severity.lower() if row.severity else 'none', 1)
+                    
+                    reports.append({
+                        'id': row.id,
+                        'image_url': row.image_url,
+                        'latitude': float(row.lat) if row.lat else None,
+                        'longitude': float(row.lng) if row.lng else None,
+                        'severity': numeric_severity,
+                        'severity_text': row.severity,
+                        'confidence': row.confidence,
+                        'created_at': str(row.created_at)
+                    })
                 
-                reports.append({
-                    'id': row.id,
-                    'image_url': row.image_url,
-                    'latitude': float(row.lat) if row.lat else None,
-                    'longitude': float(row.lng) if row.lng else None,
-                    'severity': numeric_severity,
-                    'severity_text': row.severity,
-                    'confidence': row.confidence,
-                    'created_at': str(row.created_at)
-                })
-            
             return success_response({
                 'reports': reports,
                 'count': len(reports)
