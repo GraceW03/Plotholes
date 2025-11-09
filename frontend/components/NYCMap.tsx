@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, CircleMarker } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import "leaflet.heat";
@@ -104,14 +104,6 @@ export default function NYCMap() {
   const [clickedCoords, setClickedCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [selecting, setSelecting] = useState(false);
   const mapRef = useRef<L.Map | null>(null);
-
-  // Load pothole dataset (optional)
-  useEffect(() => {
-    fetch("/data/nyc_potholes.geojson")
-      .then((res) => res.json())
-      .then(setUserReports)
-      .catch((err) => console.error("Failed to load data:", err));
-  }, []);
 
   /** Lucide pin icon rendered as static HTML for Leaflet */
   const lucidePinHTML = renderToString(<MapPin size={26} color="#FF6B6B" />);
