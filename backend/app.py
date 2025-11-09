@@ -17,6 +17,8 @@ from .services.pathplanning import compute_final_route
 from shapely.geometry import Point, Polygon as ShapelyPolygon
 import json
 from datetime import datetime
+import requests
+from .services.snowflake import parse_cortex_sse, format_prompt
 
 # Load environment variables
 load_dotenv()
@@ -444,6 +446,53 @@ def create_app():
         except Exception as e:
             return jsonify({'error': str(e)}), 500
         
+    # --------------
+    # Snowflake Integration -- Data acquisition by user query
+    # --------------
+
+    # Cortex API endpoint
+    # Snowflake Cortex REST API endpoint
+    SNOW_ACCOUNT = os.getenv("SNOWFLAKE_ACCOUNT")
+    CORTEX_URL = f"https://{SNOW_ACCOUNT}.snowflakecomputing.com/api/v2/cortex/inference:complete"
+
+    # PAT from .env
+    CORTEX_TOKEN = os.getenv("CORTEX_TOKEN")
+
+    @app.route("/test_cortex", methods=["POST"])
+    def test_cortex():
+        data = request.get_json()
+        prompt = data.get("prompt")
+        complete_prompt = format_prompt(prompt)
+
+        headers = {
+            "Authorization": f"Bearer {CORTEX_TOKEN}",
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "model": "claude-3-5-sonnet",
+            "messages": [{"role": "user", "content": complete_prompt}]
+        }
+
+        cortex_url = f"https://{os.getenv('SNOWFLAKE_ACCOUNT')}.snowflakecomputing.com/api/v2/cortex/inference:complete"
+
+        response = requests.post(cortex_url, headers=headers, json=payload, stream=True)
+
+        if response.status_code >= 400:
+            return jsonify({
+                "error": "Cortex API call failed",
+                "details": response.text
+            }), response.status_code
+    
+        text = parse_cortex_sse(response)
+
+        print("Status code:", response.status_code)
+        print("Response body:", text)
+
+        return jsonify({
+            "text": text
+        })
+
     # Error handlers
     @app.errorhandler(404)
     def not_found(error):

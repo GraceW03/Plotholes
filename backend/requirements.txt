@@ -15,10 +15,13 @@ Flask-Migrate
 SQLAlchemy
 psycopg2-binary
 GeoAlchemy2
+snowflake-connector-python
+snowflake-ml-python
+sseclient-py
 
 # API & Utilities
 requests
-python-dotenv
+python-env
 marshmallow
 Werkzeug
 gunicorn
