@@ -1,11 +1,18 @@
-# backend/model.py
+import torch
+import torch.serialization
+
+# ✅ allow YOLO model class for PyTorch 2.6+ safe load
+try:
+    torch.serialization.add_safe_globals([__import__('ultralytics').nn.tasks.DetectionModel])
+except Exception as e:
+    print("[INFO] Safe globals patch not required or already applied:", e)
+
 from ultralyticsplus import YOLO
 import requests
 import os
 from io import BytesIO
 from PIL import Image
 import numpy as np
-import torch
 
 print("Loading pothole detection model...")
 model = YOLO("keremberke/yolov8m-pothole-segmentation")
