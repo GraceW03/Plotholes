@@ -330,7 +330,7 @@ def format_prompt(user_query: str):
 # - Output **only the SQL code**, no explanations or commentary.  
 # - If the user request is ambiguous and could map to multiple interpretations, choose the one most consistent with the metadata provided.
 # """
-    nlq_prompt = f"""You are an AI that converts **natural language requests into SQL** for Snowflake. Generate **syntactically correct SQL** for the user request that will run in Snowflake without errors. Be precise, efficient, and include only needed columns.
+    nlq_prompt = f"""You are an AI that converts **natural language requests into SQL** for Postgres. Generate **syntactically correct SQL** for the user request that will run in Postgres without errors. Be precise, efficient, and include only needed columns.
     
     ## Database Metadata
     - Table: PLOTHOLES.NYC_STREET_DATA.STREET_DATA
@@ -355,15 +355,15 @@ def format_prompt(user_query: str):
     - 'Low', 'Minor', 'Slight', 'Pothole' → 2
     - others → 1
 
-    - Generate **syntactically correct SQL** that will run in Snowflake without errors
+    - Generate **syntactically correct SQL** that will run in Postgres without errors
     - When filtering by issue type (pothole, cave-in, etc.), use the DESCRIPTOR column
     - Use ILIKE '%keyword%' for flexible text matching
     - When the user asks for “most severe”, “worst”, or “highest severity”, **calculate** severity from the descriptors, don’t filter for 'Severe'.
     - Group by borough and return counts or averages of severity.
-    - Generate **syntactically correct SQL** for the user request that will run in Snowflake without errors. Be precise, efficient, and include only needed columns.
+    - Generate **syntactically correct SQL** for the user request that will run in Postgres without errors. Be precise, efficient, and include only needed columns.
     - Only use columns listed above.
     - Apply filters, aggregation, or sorting if implied.
-    - Use proper Snowflake SQL syntax.
+    - Use proper Postgres SQL syntax.
     - Output **only SQL**, no explanations.
 """
     
