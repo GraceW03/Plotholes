@@ -47,8 +47,9 @@ def create_app():
     # Enable CORS
     CORS(app, origins=[
         "http://localhost:3000",  # Next.js frontend
-        "http://127.0.0.1:3000"
-        
+        "http://127.0.0.1:3000",
+        "https://plotholes.tech",    # live frontend
+        "https://www.plotholes.tech"
     ])
 
     with app.app_context():
