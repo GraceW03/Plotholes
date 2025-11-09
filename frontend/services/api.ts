@@ -74,18 +74,11 @@ export const fetchIssues = async (): Promise<IssuesResponse> => {
   }
 };
 
-export const fetchReports = async (): Promise<ReportsResponse> => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/api/reports`);
-    if (!response.ok) {
-      throw new Error('Failed to fetch reports');
-    }
-    return await response.json();
-  } catch (error) {
-    console.error('Error fetching reports:', error);
-    throw error;
-  }
-};
+export async function fetchReports(): Promise<{ reports: Report[] }> {
+  const res = await fetch("http://localhost:3001/api/reports"); // or your backend endpoint
+  if (!res.ok) throw new Error("Failed to fetch reports");
+  return await res.json();
+}
 
 export const fetchNeighborhoodBoundaries = async (): Promise<NeighborhoodBoundariesResponse> => {
   try {
