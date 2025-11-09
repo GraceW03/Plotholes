@@ -68,14 +68,28 @@ function ClickHandler({
   return null;
 }
 
-// Component to automatically fit map to route
+// Component to automatically fit map to route (but only once per route)
 function FitBounds({ route }: { route: [number, number][] }) {
   const map = useMap();
+  const hasFittedRef = useRef(false);
+  const prevHashRef = useRef<string>("");
 
   useEffect(() => {
-    if (route.length > 0) {
-      const bounds = L.latLngBounds(route); // creates bounds that encompass all route points
-      map.fitBounds(bounds, { padding: [50, 50] }); // add padding so markers aren't at the edge
+    if (route.length === 0) return;
+
+    // simple hash to detect route changes
+    const hash = route.map(([lat, lng]) => `${lat.toFixed(3)},${lng.toFixed(3)}`).join("|");
+
+    if (hash !== prevHashRef.current) {
+      prevHashRef.current = hash;
+      hasFittedRef.current = false;
+    }
+
+    // only fit once per new route
+    if (!hasFittedRef.current) {
+      const bounds = L.latLngBounds(route);
+      map.fitBounds(bounds, { padding: [50, 50] });
+      hasFittedRef.current = true;
     }
   }, [route, map]);
 
