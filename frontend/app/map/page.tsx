@@ -13,7 +13,7 @@ const NYCMap = dynamic(() => import("@/components/NYCMap"), {
 
 export default function MapPage() {
   return (
-    <div className="h-screen w-full">
+    <div className="h-screen w-full relative">
       <NYCMap />
     </div>
   );

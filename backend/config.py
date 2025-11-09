@@ -15,10 +15,6 @@ class Config:
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max file size
     ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
     
-    # Computer Vision settings
-    CV_MODEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'models')
-    YOLO_MODEL = 'yolov8n.pt'  # You can upgrade to larger models
-    
     # Geospatial settings
     DEFAULT_SRID = 4326  # WGS84
     NYC_BOUNDS = {
