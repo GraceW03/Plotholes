@@ -59,7 +59,10 @@ function ClickHandler({
       onPick(lat, lng);
       onSelectingChange?.(false);
     };
+
     map.on("click", handleClick);
+
+    // Cleanup function - just remove the event listener, don't return anything
     return () => {
       map.off("click", handleClick);
     };
@@ -68,14 +71,28 @@ function ClickHandler({
   return null;
 }
 
-// Component to automatically fit map to route
+// Component to automatically fit map to route (but only once per route)
 function FitBounds({ route }: { route: [number, number][] }) {
   const map = useMap();
+  const hasFittedRef = useRef(false);
+  const prevHashRef = useRef<string>("");
 
   useEffect(() => {
-    if (route.length > 0) {
-      const bounds = L.latLngBounds(route); // creates bounds that encompass all route points
-      map.fitBounds(bounds, { padding: [50, 50] }); // add padding so markers aren't at the edge
+    if (route.length === 0) return;
+
+    // simple hash to detect route changes
+    const hash = route.map(([lat, lng]) => `${lat.toFixed(3)},${lng.toFixed(3)}`).join("|");
+
+    if (hash !== prevHashRef.current) {
+      prevHashRef.current = hash;
+      hasFittedRef.current = false;
+    }
+
+    // only fit once per new route
+    if (!hasFittedRef.current) {
+      const bounds = L.latLngBounds(route);
+      map.fitBounds(bounds, { padding: [50, 50] });
+      hasFittedRef.current = true;
     }
   }, [route, map]);
 
@@ -88,6 +105,13 @@ export default function NYCMap() {
   const [selecting, setSelecting] = useState(false);
   const mapRef = useRef<L.Map | null>(null);
 
+  // Load pothole dataset (optional)
+  useEffect(() => {
+    fetch("/data/nyc_potholes.geojson")
+      .then((res) => res.json())
+      .then(setReports)
+      .catch((err) => console.error("Failed to load data:", err));
+  }, []);
 
   /** Lucide pin icon rendered as static HTML for Leaflet */
   const lucidePinHTML = renderToString(<MapPin size={26} color="#FF6B6B" />);
@@ -96,6 +120,14 @@ export default function NYCMap() {
     className: "",
     iconSize: [26, 26],
     iconAnchor: [13, 26],
+  });
+
+  // Custom icons
+  const lucideMarkerIcon = L.divIcon({
+    html: renderToString(<MapPin size={24} color="#3B82F6" />),
+    className: "",
+    iconSize: [24, 24],
+    iconAnchor: [12, 24]
   });
 
   /** Called when user clicks the map in select mode */
@@ -118,36 +150,80 @@ export default function NYCMap() {
   };
   const center: [number, number] = [40.7128, -74.0060]; // NYC coordinates
   const [route, setRoute] = useState<[number, number][]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   // Example origin/destination (you can make this dynamic)
   const origin: [number, number] = [40.681722, -73.832725];
   const destination: [number, number] = [40.682725, -73.829194];
 
-  useEffect(() => {
-    const fetchRoute = async () => {
+  const fetchWithRetry = async (url: string, options = {}, retries = 3, delay = 1000) => {
+    for (let i = 0; i < retries; i++) {
       try {
-        const response = await fetch("http://localhost:3001/api/route", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ origin, destination }),
-        });
+        const response = await fetch(url, options);
+        if (response.ok) return response;
+        throw new Error(`HTTP error! status: ${response.status}`);
+      } catch (error) {
+        if (i === retries - 1) throw error;
+        await new Promise(resolve => setTimeout(resolve, delay * (i + 1)));
+      }
+    }
+    throw new Error('Max retries reached');
+  };
 
-        if (!response.ok) throw new Error("Failed to fetch route");
+  const fetchOSRMRoute = async (start: [number, number], end: [number, number]) => {
+    try {
+      const [startLng, startLat] = [start[1], start[0]];
+      const [endLng, endLat] = [end[1], end[0]];
+      const url = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`;
 
-        const data = await response.json();
-        setRoute(data.route); // route is an array of [lat, lon] pairs
-      } catch (err) {
-        console.error(err);
+      const response = await fetchWithRetry(url);
+      const data = await response.json();
+
+      if (data.routes?.[0]?.geometry?.coordinates) {
+        return data.routes[0].geometry.coordinates.map((coord: [number, number]) => [coord[1], coord[0]]);
+      }
+      throw new Error('Invalid route data format');
+    } catch (error) {
+      console.warn('Using fallback route due to:', error);
+      // Return a simple straight line as fallback
+      return [start, end];
+    }
+  };
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchRoute = async () => {
+      setIsLoading(true);
+      try {
+        const route = await fetchOSRMRoute(origin, destination);
+        if (isMounted) {
+          setRoute(route);
+        }
+      } catch (error) {
+        console.error('Error in route fetching:', error);
+        if (isMounted) {
+          setRoute([origin, destination]);
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false);
+        }
       }
     };
 
     fetchRoute();
-  }, []);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [origin, destination]);
+
   const heatLayerRef = useRef<any>(null); // Using any for leaflet.heat layer
   const neighborhoodLayerRef = useRef<L.LayerGroup | null>(null);
 
   const [heatmapMode, setHeatmapMode] = useState<HeatmapMode>('off');
-  const [isLoading, setIsLoading] = useState(false);
+  // const [isLoading, setIsLoading] = useState(false);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [neighborhoods, setNeighborhoods] = useState<NeighborhoodFeature[]>([]);
   const [userReports, setUserReports] = useState<UserReport[]>([]);
@@ -357,6 +433,12 @@ export default function NYCMap() {
   return (
 
     <div className="h-screen w-full relative bg-[#FFF9F3]">
+      {isLoading && (
+        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-white/90 px-4 py-2 rounded-lg shadow-lg z-50 flex items-center gap-2">
+          <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+          <span className="text-sm font-medium">Loading route...</span>
+        </div>
+      )}
       <MapContainer
         center={[40.7128, -74.006]}
         zoom={11}
@@ -371,6 +453,32 @@ export default function NYCMap() {
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           attribution='&copy; <a href="https://openstreetmap.org">OpenStreetMap</a> contributors'
         />
+
+        {/* NYC Center Marker */}
+        <Marker position={center} icon={lucideMarkerIcon}>
+          <Popup>
+            <div className="font-semibold">📍 New York City</div>
+            <p className="text-sm text-zinc-600">NYC map with custom marker</p>
+          </Popup>
+        </Marker>
+
+        {/* Origin marker */}
+        <Marker position={origin} icon={lucideMarkerIcon}>
+          <Popup>Origin</Popup>
+        </Marker>
+
+        {/* Destination marker */}
+        <Marker position={destination} icon={lucideMarkerIcon}>
+          <Popup>Destination</Popup>
+        </Marker>
+
+        {/* Route Polyline */}
+        {route.length > 0 && (
+          <Polyline positions={route} color="red" weight={4} />
+        )}
+
+        {/* Fit map to route */}
+        <FitBounds route={route} />
 
         {/* Render existing pothole reports */}
         {reports.map((r) => (
@@ -397,7 +505,7 @@ export default function NYCMap() {
           </CircleMarker>
         ))}
 
-        {/* 📍 Pin for selected or searched location */}
+        {/* Pin for selected or searched location */}
         {clickedCoords && (
           <Marker position={[clickedCoords.lat, clickedCoords.lng]} icon={lucidePinIcon}>
             <Popup>
@@ -441,9 +549,9 @@ export default function NYCMap() {
 
       {/* Header */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] bg-white/80 backdrop-blur-md px-6 py-2 rounded-full text-sm sm:text-base font-semibold text-[#2B2B2B] shadow-md border border-[#f0f0f0]">
-        🗽 NYC Pothole Reports •{" "}
-        <span className="font-bold text-[#FF6B6B]">{reports.length}</span>{" "}
-        {reports.length === 1 ? "report" : "reports"}
+        🗽 NYC Pothole Reports •{' '}
+        <span className="font-bold text-[#FF6B6B]">{reports.length}</span>{' '}
+        {reports.length === 1 ? 'report' : 'reports'}
       </div>
 
       {/* Selection banner */}
