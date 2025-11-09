@@ -48,6 +48,7 @@ def create_app():
     CORS(app, origins=[
         "http://localhost:3000",  # Next.js frontend
         "http://127.0.0.1:3000"
+        
     ])
 
     with app.app_context():
