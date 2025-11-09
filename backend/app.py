@@ -203,6 +203,7 @@ def create_app():
             })
         except Exception as e:
             return failure_response(str(e), 500)
+        
     @app.route('/api/neighborhood-boundaries', methods=['GET'])
     def get_neighborhood_boundaries():
         """Get NYC neighborhood boundaries with issue counts"""

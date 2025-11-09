@@ -223,7 +223,7 @@ export default function NYCMap() {
   const neighborhoodLayerRef = useRef<L.LayerGroup | null>(null);
 
   const [heatmapMode, setHeatmapMode] = useState<HeatmapMode>('off');
-  // const [isLoading, setIsLoading] = useState(false);
+  // setIsLoading(false);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [neighborhoods, setNeighborhoods] = useState<NeighborhoodFeature[]>([]);
   const [userReports, setUserReports] = useState<UserReport[]>([]);
@@ -233,42 +233,50 @@ export default function NYCMap() {
     mapRef.current = map;
   };
 
+  // Separate loading states for different data types
+  const [issuesLoading, setIssuesLoading] = useState(false);
+  const [reportsLoading, setReportsLoading] = useState(false);
+  const [neighborhoodsLoading, setNeighborhoodsLoading] = useState(false);
+
   // Load individual issues data
   const loadIssues = async () => {
+    if (issuesLoading) return; // Prevent multiple concurrent requests
     try {
-      setIsLoading(true);
+      setIssuesLoading(true);
       const data = await fetchIssues();
       setIssues(data.issues);
     } catch (error) {
       console.error('Failed to load issues:', error);
     } finally {
-      setIsLoading(false);
+      setIssuesLoading(false);
     }
   };
 
   // Load user reports data
   const loadReports = async () => {
+    if (reportsLoading) return; // Prevent multiple concurrent requests
     try {
-      setIsLoading(true);
+      setReportsLoading(true);
       const data = await fetchReports();
       setUserReports(data.reports);
     } catch (error) {
       console.error('Failed to load reports:', error);
     } finally {
-      setIsLoading(false);
+      setReportsLoading(false);
     }
   };
 
   // Load neighborhood boundaries data
   const loadNeighborhoods = async () => {
+    if (neighborhoodsLoading) return; // Prevent multiple concurrent requests
     try {
-      setIsLoading(true);
+      setNeighborhoodsLoading(true);
       const data = await fetchNeighborhoodBoundaries();
       setNeighborhoods(data.features);
     } catch (error) {
       console.error('Failed to load neighborhoods:', error);
     } finally {
-      setIsLoading(false);
+      setNeighborhoodsLoading(false);
     }
   };
 
@@ -394,7 +402,9 @@ export default function NYCMap() {
         const needsReports = userReports.length === 0;
 
         if (needsIssues && needsReports) {
-          Promise.all([loadIssues(), loadReports()]);
+          Promise.all([loadIssues(), loadReports()]).catch(error => {
+            console.error('Failed to load data:', error);
+          });
         } else if (needsIssues) {
           loadIssues();
         } else if (needsReports) {
@@ -565,7 +575,7 @@ export default function NYCMap() {
       <HeatmapControls
         mode={heatmapMode}
         onModeChange={setHeatmapMode}
-        isLoading={isLoading}
+        isLoading={issuesLoading || reportsLoading || neighborhoodsLoading}
       />
 
       {/* Drawer */}
