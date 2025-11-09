@@ -10,15 +10,21 @@ type Coords = { lat: number; lng: number } | null;
 interface ReportDrawerProps {
   onDropMarker?: (lat: number, lng: number) => void;
   clickedCoords?: { lat: number; lng: number } | null;
-  onRequestSelect: () => void; // ✅ REQUIRED now
+  onRequestSelect: () => void;
+  isOpen?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 export default function ReportDrawer({
   onDropMarker,
   clickedCoords,
   onRequestSelect,
+  isOpen: externalOpen,
+  onOpenChange,
 }: ReportDrawerProps) {
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const open = externalOpen !== undefined ? externalOpen : internalOpen;
+  const setOpen = onOpenChange || setInternalOpen;
   const [file, setFile] = useState<File | null>(null);
   const [coords, setCoords] = useState<Coords>(null);
   const [address, setAddress] = useState<string>("");
@@ -118,18 +124,6 @@ export default function ReportDrawer({
 
   return (
     <>
-      {/* Floating Button */}
-      {!open && (
-        <motion.button
-          onClick={() => setOpen(true)}
-          whileHover={{ scale: 1.05 }}
-          className="fixed bottom-6 left-6 z-[1000] bg-[#FFADAD] hover:bg-[#ff9f9f] text-[#2B2B2B] font-bold shadow-lg rounded-full px-5 py-3 flex items-center gap-2 transition"
-        >
-          <MapPin className="w-5 h-5" />
-          <span>New Report</span>
-        </motion.button>
-      )}
-
       {/* Drawer */}
       <AnimatePresence>
         {open && (

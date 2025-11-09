@@ -5,7 +5,7 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, CircleMarker 
 import "leaflet/dist/leaflet.css";
 import "leaflet.heat";
 import L from "leaflet";
-import { MapPin } from "lucide-react";
+import { MapPin, Menu, X, FilePlus, Flame, Grid3x3 } from "lucide-react";
 import { renderToString } from "react-dom/server";
 import HeatmapControls, { HeatmapMode } from "./HeatmapControls";
 import { fetchIssues, fetchNeighborhoodBoundaries, fetchReports, Issue, NeighborhoodFeature, Report as UserReport } from "../services/api";
@@ -61,8 +61,6 @@ function ClickHandler({
     };
 
     map.on("click", handleClick);
-
-    // Cleanup function - just remove the event listener, don't return anything
     return () => {
       map.off("click", handleClick);
     };
@@ -80,7 +78,6 @@ function FitBounds({ route }: { route: [number, number][] }) {
   useEffect(() => {
     if (route.length === 0) return;
 
-    // simple hash to detect route changes
     const hash = route.map(([lat, lng]) => `${lat.toFixed(3)},${lng.toFixed(3)}`).join("|");
 
     if (hash !== prevHashRef.current) {
@@ -88,7 +85,6 @@ function FitBounds({ route }: { route: [number, number][] }) {
       hasFittedRef.current = false;
     }
 
-    // only fit once per new route
     if (!hasFittedRef.current) {
       const bounds = L.latLngBounds(route);
       map.fitBounds(bounds, { padding: [50, 50] });
@@ -100,21 +96,20 @@ function FitBounds({ route }: { route: [number, number][] }) {
 }
 
 export default function NYCMap() {
-  const [reports] = useState<Report[]>([]); // Empty array since we load from API
+  const [reports] = useState<Report[]>([]);
   const [clickedCoords, setClickedCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [selecting, setSelecting] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const mapRef = useRef<L.Map | null>(null);
 
   /** Lucide pin icon rendered as static HTML for Leaflet */
-  const lucidePinHTML = renderToString(<MapPin size={26} color="#FF6B6B" />);
   const lucidePinIcon = L.divIcon({
-    html: `<div style="transform: translate(-50%, -100%); display:flex;align-items:center;justify-content:center;">${lucidePinHTML}</div>`,
+    html: `<div style="transform: translate(-50%, -100%); display:flex;align-items:center;justify-content:center;">${renderToString(<MapPin size={26} color="#FF6B6B" />)}</div>`,
     className: "",
     iconSize: [26, 26],
     iconAnchor: [13, 26],
   });
 
-  // Custom icons
   const lucideMarkerIcon = L.divIcon({
     html: renderToString(<MapPin size={24} color="#3B82F6" />),
     className: "",
@@ -135,16 +130,22 @@ export default function NYCMap() {
     setClickedCoords(null);
   };
 
+  /** Called from nav menu when "New Report" clicked */
+  const handleOpenNewReport = () => {
+    setDrawerOpen(true);
+  };
+
   /** Called when drawer geocodes or uses my location */
   const handleDropMarker = (lat: number, lng: number) => {
     setClickedCoords({ lat, lng });
     mapRef.current?.flyTo([lat, lng], 15);
   };
-  const center: [number, number] = [40.7128, -74.0060]; // NYC coordinates
+
+  const center: [number, number] = [40.7128, -74.0060];
   const [route, setRoute] = useState<[number, number][]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [showNav, setShowNav] = useState(false);
 
-  // Example origin/destination (you can make this dynamic)
   const origin: [number, number] = [40.681722, -73.832725];
   const destination: [number, number] = [40.682725, -73.829194];
 
@@ -177,7 +178,6 @@ export default function NYCMap() {
       throw new Error('Invalid route data format');
     } catch (error) {
       console.warn('Using fallback route due to:', error);
-      // Return a simple straight line as fallback
       return [start, end];
     }
   };
@@ -209,30 +209,27 @@ export default function NYCMap() {
     return () => {
       isMounted = false;
     };
-  }, [origin, destination]);
+  }, []);
 
-  const heatLayerRef = useRef<any>(null); // Using any for leaflet.heat layer
+  const heatLayerRef = useRef<any>(null);
   const neighborhoodLayerRef = useRef<L.LayerGroup | null>(null);
 
-  const [heatmapMode, setHeatmapMode] = useState<HeatmapMode>('off');
-  // setIsLoading(false);
+  const [heatmapMode, setHeatmapMode] = useState<HeatmapMode>('individual');
+  const [showHeatmapPanel, setShowHeatmapPanel] = useState(false);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [neighborhoods, setNeighborhoods] = useState<NeighborhoodFeature[]>([]);
   const [userReports, setUserReports] = useState<UserReport[]>([]);
 
-  // Initialize map ref
   const handleMapReady = (map: L.Map) => {
     mapRef.current = map;
   };
 
-  // Separate loading states for different data types
   const [issuesLoading, setIssuesLoading] = useState(false);
   const [reportsLoading, setReportsLoading] = useState(false);
   const [neighborhoodsLoading, setNeighborhoodsLoading] = useState(false);
 
-  // Load individual issues data
   const loadIssues = async () => {
-    if (issuesLoading) return; // Prevent multiple concurrent requests
+    if (issuesLoading) return;
     try {
       setIssuesLoading(true);
       const data = await fetchIssues();
@@ -244,9 +241,8 @@ export default function NYCMap() {
     }
   };
 
-  // Load user reports data
   const loadReports = async () => {
-    if (reportsLoading) return; // Prevent multiple concurrent requests
+    if (reportsLoading) return;
     try {
       setReportsLoading(true);
       const data = await fetchReports();
@@ -258,9 +254,8 @@ export default function NYCMap() {
     }
   };
 
-  // Load neighborhood boundaries data
   const loadNeighborhoods = async () => {
-    if (neighborhoodsLoading) return; // Prevent multiple concurrent requests
+    if (neighborhoodsLoading) return;
     try {
       setNeighborhoodsLoading(true);
       const data = await fetchNeighborhoodBoundaries();
@@ -272,60 +267,44 @@ export default function NYCMap() {
     }
   };
 
-  // Create heatmap layer from issues and user reports
   const createIssuesHeatmap = () => {
     if (!mapRef.current || (issues.length === 0 && userReports.length === 0)) return;
 
-    // Remove existing heat layer
     if (heatLayerRef.current) {
       mapRef.current.removeLayer(heatLayerRef.current);
     }
 
-    // Convert issues to heatmap points [lat, lng, intensity]
     const issuePoints: [number, number, number][] = issues
       .filter(issue => issue.latitude && issue.longitude)
-      .map(issue => [
-        issue.latitude,
-        issue.longitude,
-        issue.severity / 5 // Normalize severity (1-5) to (0.2-1.0)
-      ]);
+      .map(issue => [issue.latitude, issue.longitude, issue.severity / 5]);
 
-    // Convert user reports to heatmap points [lat, lng, intensity]
     const reportPoints: [number, number, number][] = userReports
       .filter(report => report.latitude && report.longitude)
-      .map(report => [
-        report.latitude,
-        report.longitude,
-        Math.max(report.severity / 5, 0.4) // Normalize severity (1-5) to (0.2-1.0), with minimum 0.4 for visibility
-      ]);
+      .map(report => [report.latitude, report.longitude, Math.max(report.severity / 5, 0.4)]);
 
-    // Combine all points
     const allHeatPoints = [...issuePoints, ...reportPoints];
 
     if (allHeatPoints.length === 0) return;
 
-    // Create heat layer with severity-based gradient
     heatLayerRef.current = (L as any).heatLayer(allHeatPoints, {
       radius: 25,
       blur: 15,
       maxZoom: 17,
       gradient: {
-        0.2: '#00ff00', // Low severity - green
-        0.4: '#ffff00', // Low-medium severity - yellow
-        0.6: '#ff9900', // Medium severity - orange
-        0.8: '#ff0000', // High severity - red
-        1.0: '#990000'  // Critical severity - dark red
+        0.2: '#00ff00',
+        0.4: '#ffff00',
+        0.6: '#ff9900',
+        0.8: '#ff0000',
+        1.0: '#990000'
       }
     });
 
     mapRef.current.addLayer(heatLayerRef.current);
   };
 
-  // Create neighborhood polygons layer
   const createNeighborhoodsLayer = () => {
     if (!mapRef.current || neighborhoods.length === 0) return;
 
-    // Remove existing neighborhood layer
     if (neighborhoodLayerRef.current) {
       mapRef.current.removeLayer(neighborhoodLayerRef.current);
     }
@@ -333,10 +312,8 @@ export default function NYCMap() {
     neighborhoodLayerRef.current = L.layerGroup();
 
     neighborhoods.forEach(feature => {
-      // Create polygon from GeoJSON geometry
       const coordinates = feature.geometry.coordinates[0].map(coord => [coord[1], coord[0]] as [number, number]);
 
-      // Color based on risk level
       const getNeighborhoodStyle = (riskLevel: string) => {
         switch (riskLevel) {
           case 'critical': return { color: '#990000', fillColor: '#990000', fillOpacity: 0.6 };
@@ -352,7 +329,6 @@ export default function NYCMap() {
         weight: 2
       });
 
-      // Add popup with neighborhood information
       polygon.bindPopup(`
         <div class="p-2">
           <h3 class="font-semibold text-lg">${feature.properties.neighborhood || 'Unknown Neighborhood'}</h3>
@@ -372,11 +348,9 @@ export default function NYCMap() {
     mapRef.current.addLayer(neighborhoodLayerRef.current);
   };
 
-  // Handle heatmap mode changes
   useEffect(() => {
     if (!mapRef.current) return;
 
-    // Remove existing layers
     if (heatLayerRef.current) {
       mapRef.current.removeLayer(heatLayerRef.current);
       heatLayerRef.current = null;
@@ -386,17 +360,13 @@ export default function NYCMap() {
       neighborhoodLayerRef.current = null;
     }
 
-    // Add appropriate layer based on mode
     switch (heatmapMode) {
       case 'individual':
-        // Load both issues and reports if not already loaded
         const needsIssues = issues.length === 0;
         const needsReports = userReports.length === 0;
 
         if (needsIssues && needsReports) {
-          Promise.all([loadIssues(), loadReports()]).catch(error => {
-            console.error('Failed to load data:', error);
-          });
+          Promise.all([loadIssues(), loadReports()]);
         } else if (needsIssues) {
           loadIssues();
         } else if (needsReports) {
@@ -412,14 +382,9 @@ export default function NYCMap() {
           createNeighborhoodsLayer();
         }
         break;
-      case 'off':
-      default:
-        // Layers already removed above
-        break;
     }
   }, [heatmapMode, mapRef.current]);
 
-  // Create heatmap when data is loaded
   useEffect(() => {
     if (heatmapMode === 'individual' && (issues.length > 0 || userReports.length > 0)) {
       createIssuesHeatmap();
@@ -433,22 +398,21 @@ export default function NYCMap() {
   }, [neighborhoods]);
 
   return (
-
     <div className="h-screen w-full relative bg-[#FFF9F3]">
+      {/* Loading indicator */}
       {isLoading && (
-        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-white/90 px-4 py-2 rounded-lg shadow-lg z-50 flex items-center gap-2">
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-white/90 px-4 py-2 rounded-lg shadow-lg z-[1000] flex items-center gap-2">
           <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
           <span className="text-sm font-medium">Loading route...</span>
         </div>
       )}
+
       <MapContainer
-        center={[40.7128, -74.006]}
+        center={center}
         zoom={11}
         scrollWheelZoom
         style={{ height: "100%", width: "100%" }}
-      // whenCreated={handleMapReady}
       >
-        {/* hand the real map instance to mapRef */}
         <MapRefBridge onInit={handleMapReady} />
 
         <TileLayer
@@ -466,18 +430,16 @@ export default function NYCMap() {
 
         {/* Origin marker */}
         <Marker position={origin} icon={lucideMarkerIcon}>
-          <Popup>Origin</Popup>
+          <Popup>📍 Origin</Popup>
         </Marker>
 
         {/* Destination marker */}
         <Marker position={destination} icon={lucideMarkerIcon}>
-          <Popup>Destination</Popup>
+          <Popup>📍 Destination</Popup>
         </Marker>
 
         {/* Route Polyline */}
-        {route.length > 0 && (
-          <Polyline positions={route} color="red" weight={4} />
-        )}
+        {route.length > 0 && <Polyline positions={route} color="#FF6B6B" weight={4} />}
 
         {/* Fit map to route */}
         <FitBounds route={route} />
@@ -489,10 +451,7 @@ export default function NYCMap() {
             center={[r.Latitude, r.Longitude]}
             radius={4.5}
             pathOptions={{
-              color:
-                r.Status === "Closed" ? "#9bf6ff" :
-                  r.Status === "Open" ? "#ffadad" :
-                    "#ffd6a5",
+              color: r.Status === "Closed" ? "#9bf6ff" : r.Status === "Open" ? "#ffadad" : "#ffd6a5",
               fillOpacity: 0.9,
             }}
           >
@@ -507,7 +466,7 @@ export default function NYCMap() {
           </CircleMarker>
         ))}
 
-        {/* Pin for selected or searched location */}
+        {/* Pin for selected location */}
         {clickedCoords && (
           <Marker position={[clickedCoords.lat, clickedCoords.lng]} icon={lucidePinIcon}>
             <Popup>
@@ -520,61 +479,143 @@ export default function NYCMap() {
           </Marker>
         )}
 
-        {/* Map center marker */}
-        <Marker position={center} icon={lucidePinIcon}>
-          <Popup>
-            <div className="font-semibold">📍 New York City</div>
-            <p className="text-sm text-zinc-600">NYC map with custom marker</p>
-          </Popup>
-        </Marker>
-
-        {/* Origin marker */}
-        <Marker position={origin} icon={lucidePinIcon}>
-          <Popup>Origin</Popup>
-        </Marker>
-
-        {/* Destination marker */}
-        <Marker position={destination} icon={lucidePinIcon}>
-          <Popup>Destination</Popup>
-        </Marker>
-
-        {/* Route Polyline */}
-        {route.length > 0 && (
-          <Polyline positions={route} color="red" weight={4} />
-        )}
-
-        {/* Fit map to route */}
-        <FitBounds route={route} />
-
         <ClickHandler selecting={selecting} onPick={handlePick} onSelectingChange={setSelecting} />
       </MapContainer>
 
       {/* Header */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] bg-white/80 backdrop-blur-md px-6 py-2 rounded-full text-sm sm:text-base font-semibold text-[#2B2B2B] shadow-md border border-[#f0f0f0]">
-        🗽 NYC Pothole Reports •{' '}
-        <span className="font-bold text-[#FF6B6B]">{reports.length}</span>{' '}
-        {reports.length === 1 ? 'report' : 'reports'}
+      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] bg-white/80 backdrop-blur-md px-6 py-2 rounded-full text-sm font-semibold text-[#2B2B2B] shadow-md border border-[#f0f0f0]">
+        🗽 NYC Pothole Reports • <span className="font-bold text-[#FF6B6B]">{reports.length}</span> {reports.length === 1 ? 'report' : 'reports'}
       </div>
 
-      {/* Selection banner */}
-      {selecting && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] bg-[#FFD6A5] text-[#2B2B2B] px-4 py-2 rounded-full text-sm font-semibold shadow-md border border-[#f0e3c0]">
-          👆 Click anywhere on the map to choose a location
+      {/* Unified Navigation Menu */}
+      <div className="fixed top-4 right-4 z-[1001]">
+        <button
+          onClick={() => setShowNav(!showNav)}
+          className="p-3 rounded-full bg-white/90 shadow-lg hover:bg-white transition-all border border-gray-200"
+          aria-label="Navigation menu"
+        >
+          {showNav ? <X className="w-5 h-5 text-gray-800" /> : <Menu className="w-5 h-5 text-gray-800" />}
+        </button>
+
+        {showNav && (
+          <div className="absolute right-0 mt-3 w-56 bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden">
+            <button
+              onClick={() => {
+                setShowHeatmapPanel(!showHeatmapPanel);
+                setShowNav(false);
+              }}
+              className="w-full flex items-center px-4 py-3 text-sm font-medium text-gray-800 hover:bg-gray-50 transition-colors border-b border-gray-100"
+            >
+              <Flame className="w-4 h-4 mr-3 text-orange-500" />
+              Heatmap Options
+            </button>
+
+            <button
+              onClick={() => {
+                handleOpenNewReport();
+                setShowNav(false);
+              }}
+              className="w-full flex items-center px-4 py-3 text-sm font-medium text-gray-800 hover:bg-gray-50 transition-colors"
+            >
+              <FilePlus className="w-4 h-4 mr-3 text-green-500" />
+              New Report
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Heatmap Control Panel */}
+      {showHeatmapPanel && (
+        <div className="fixed top-20 right-4 z-[1000] w-72 bg-white/95 backdrop-blur-xl rounded-2xl shadow-2xl border border-gray-200 overflow-hidden">
+          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+            <h3 className="font-bold text-gray-800 flex items-center gap-2">
+              <Flame className="w-5 h-5 text-orange-500" />
+              Heatmap Options
+            </h3>
+            <button
+              onClick={() => setShowHeatmapPanel(false)}
+              className="text-gray-400 hover:text-gray-600 transition"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          <div className="p-4 space-y-3">
+            <button
+              onClick={() => setHeatmapMode(prev => prev === 'individual' ? 'off' : 'individual')}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all ${
+                heatmapMode === 'individual' 
+                  ? 'bg-orange-50 border-2 border-orange-400 text-orange-700' 
+                  : 'bg-gray-50 border-2 border-transparent hover:border-gray-300 text-gray-700'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Flame className={`w-5 h-5 ${heatmapMode === 'individual' ? 'text-orange-500' : 'text-gray-400'}`} />
+                <span className="font-medium text-sm">Individual Issues</span>
+              </div>
+              {heatmapMode === 'individual' && (
+                <div className="w-2 h-2 rounded-full bg-orange-500"></div>
+              )}
+            </button>
+
+            <button
+              onClick={() => setHeatmapMode(prev => prev === 'neighborhoods' ? 'off' : 'neighborhoods')}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all ${
+                heatmapMode === 'neighborhoods' 
+                  ? 'bg-purple-50 border-2 border-purple-400 text-purple-700' 
+                  : 'bg-gray-50 border-2 border-transparent hover:border-gray-300 text-gray-700'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <Grid3x3 className={`w-5 h-5 ${heatmapMode === 'neighborhoods' ? 'text-purple-500' : 'text-gray-400'}`} />
+                <span className="font-medium text-sm">Neighborhood Risk</span>
+              </div>
+              {heatmapMode === 'neighborhoods' && (
+                <div className="w-2 h-2 rounded-full bg-purple-500"></div>
+              )}
+            </button>
+
+            {heatmapMode !== 'off' && (
+              <button
+                onClick={() => setHeatmapMode('off')}
+                className="w-full px-4 py-2 text-xs font-medium text-gray-500 hover:text-gray-700 transition"
+              >
+                Clear Heatmap
+              </button>
+            )}
+          </div>
+
+          {(issuesLoading || reportsLoading || neighborhoodsLoading) && (
+            <div className="px-4 pb-4 flex items-center justify-center gap-2 text-xs text-gray-500">
+              <div className="w-3 h-3 border-2 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+              Loading data...
+            </div>
+          )}
         </div>
       )}
 
-      {/* Heatmap Controls */}
-      <HeatmapControls
-        mode={heatmapMode}
-        onModeChange={setHeatmapMode}
-        isLoading={issuesLoading || reportsLoading || neighborhoodsLoading}
-      />
+      {/* Click-outside backdrop for heatmap panel */}
+      {showHeatmapPanel && (
+        <div
+          className="fixed inset-0 z-[999]"
+          onClick={() => setShowHeatmapPanel(false)}
+        />
+      )}
+
+      {/* Selection banner */}
+      {selecting && (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] bg-[#FFD6A5] text-[#2B2B2B] px-5 py-2.5 rounded-full text-sm font-semibold shadow-lg border border-[#f0e3c0]">
+          👆 Click anywhere on the map to choose a location
+        </div>
+      )}
 
       {/* Drawer */}
       <ReportDrawer
         clickedCoords={clickedCoords}
         onDropMarker={handleDropMarker}
         onRequestSelect={handleRequestSelect}
+        isOpen={drawerOpen}
+        onOpenChange={setDrawerOpen}
       />
     </div>
   );
