@@ -225,7 +225,7 @@ def create_app():
             except Exception as e:
                 return failure_response(f"DB Error: {str(e)}", 500)
 
-            app.blocked_edges_set.append((u,v,k))
+            app.blocked_edges_set.add((u, v, k))
             print(f"Blocked Edge added: {(u,v,k)}")
 
         return success_response({'success': True})

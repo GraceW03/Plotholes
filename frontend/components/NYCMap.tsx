@@ -5,11 +5,12 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, CircleMarker 
 import "leaflet/dist/leaflet.css";
 import "leaflet.heat";
 import L from "leaflet";
-import { MapPin, Menu, X, FilePlus, Flame, Grid3x3 } from "lucide-react";
+import { MapPin, Menu, X, FilePlus, Flame, Grid3x3, Navigation } from "lucide-react";
 import { renderToString } from "react-dom/server";
 import HeatmapControls, { HeatmapMode } from "./HeatmapControls";
 import { fetchIssues, fetchNeighborhoodBoundaries, fetchReports, Issue, NeighborhoodFeature, Report as UserReport } from "../services/api";
 import ReportDrawer from "@/components/ReportDrawer";
+import PathFinderDrawer from "@/components/PathFinderDrawer";
 
 interface Report {
   UniqueKey: string;
@@ -42,22 +43,29 @@ function ClickHandler({
 }) {
   const map = useMap();
   const selectingRef = useRef(selecting);
+  const isPathSelection = useRef(false);
 
   useEffect(() => {
+    // Check if we're in path selection mode
+    isPathSelection.current = selecting && onSelectingChange === undefined;
+    
     selectingRef.current = selecting;
     const el = map.getContainer();
     el.style.cursor = selecting ? "crosshair" : "";
     return () => {
       el.style.cursor = "";
     };
-  }, [map, selecting]);
+  }, [map, selecting, onSelectingChange]);
 
   useEffect(() => {
     const handleClick = (e: L.LeafletMouseEvent) => {
       if (!selectingRef.current) return;
       const { lat, lng } = e.latlng;
       onPick(lat, lng);
-      onSelectingChange?.(false);
+      // Only call onSelectingChange if we're not in path selection mode
+      if (!isPathSelection.current) {
+        onSelectingChange?.(false);
+      }
     };
 
     map.on("click", handleClick);
@@ -100,6 +108,13 @@ export default function NYCMap() {
   const [clickedCoords, setClickedCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [selecting, setSelecting] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [pathFinderOpen, setPathFinderOpen] = useState(false);
+  const [selectingForPath, setSelectingForPath] = useState<'none' | 'origin' | 'destination'>('none');
+  const [pathOrigin, setPathOrigin] = useState<{ lat: number; lng: number } | null>(null);
+  const [pathDestination, setPathDestination] = useState<{ lat: number; lng: number } | null>(null);
+  const [reportCoords, setReportCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [pathClickCoords, setPathClickCoords] = useState<{ lat: number; lng: number } | null>(null);
+
   const mapRef = useRef<L.Map | null>(null);
 
   /** Lucide pin icon rendered as static HTML for Leaflet */
@@ -117,12 +132,23 @@ export default function NYCMap() {
     iconAnchor: [12, 24]
   });
 
-  /** Called when user clicks the map in select mode */
-  const handlePick = (lat: number, lng: number) => {
-    setClickedCoords({ lat, lng });
+/** Called when user clicks the map */
+const handlePick = (lat: number, lng: number) => {
+  if (selectingForPath !== "none") {
+    if (selectingForPath === "origin") setPathOrigin({ lat, lng });
+    else setPathDestination({ lat, lng });
+
+    setPathClickCoords({ lat, lng });   // ← only for PathFinder
+    setPathFinderOpen(true);
+    setTimeout(() => setSelectingForPath("none"), 0); // no report side-effects
+  } else if (selecting) {
+    setReportCoords({ lat, lng });      // ← only for Report
     setSelecting(false);
-    mapRef.current?.flyTo([lat, lng], 15);
-  };
+    setDrawerOpen(true);
+  }
+  mapRef.current?.flyTo([lat, lng], 15);
+};
+
 
   /** Called from drawer when "Select on map" clicked */
   const handleRequestSelect = () => {
@@ -135,6 +161,17 @@ export default function NYCMap() {
     setDrawerOpen(true);
   };
 
+  /** Called from nav menu when "Find a Path" clicked */
+  const handleOpenPathFinder = () => {
+    setPathFinderOpen(true);
+  };
+
+  /** Called when PathFinder calculates a new route */
+  const handlePathCalculated = async (origin: [number, number], destination: [number, number]) => {
+    const newRoute = await fetchOSRMRoute(origin, destination);
+    setRoute(newRoute);
+  };
+
   /** Called when drawer geocodes or uses my location */
   const handleDropMarker = (lat: number, lng: number) => {
     setClickedCoords({ lat, lng });
@@ -143,11 +180,8 @@ export default function NYCMap() {
 
   const center: [number, number] = [40.7128, -74.0060];
   const [route, setRoute] = useState<[number, number][]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [showNav, setShowNav] = useState(false);
-
-  const origin: [number, number] = [40.681722, -73.832725];
-  const destination: [number, number] = [40.682725, -73.829194];
 
   const fetchWithRetry = async (url: string, options = {}, retries = 3, delay = 1000) => {
     for (let i = 0; i < retries; i++) {
@@ -183,32 +217,7 @@ export default function NYCMap() {
   };
 
   useEffect(() => {
-    let isMounted = true;
-
-    const fetchRoute = async () => {
-      setIsLoading(true);
-      try {
-        const route = await fetchOSRMRoute(origin, destination);
-        if (isMounted) {
-          setRoute(route);
-        }
-      } catch (error) {
-        console.error('Error in route fetching:', error);
-        if (isMounted) {
-          setRoute([origin, destination]);
-        }
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    fetchRoute();
-
-    return () => {
-      isMounted = false;
-    };
+    // Don't auto-load route on mount - user will trigger it via PathFinder
   }, []);
 
   const heatLayerRef = useRef<any>(null);
@@ -428,18 +437,43 @@ export default function NYCMap() {
           </Popup>
         </Marker>
 
-        {/* Origin marker */}
-        <Marker position={origin} icon={lucideMarkerIcon}>
-          <Popup>📍 Origin</Popup>
-        </Marker>
+        {/* Route Polyline & Pins */}
+        {route.length > 0 && (
+          <>
+            <Marker position={route[0]} icon={lucideMarkerIcon}>
+              <Popup>📍 Origin</Popup>
+            </Marker>
+            <Marker position={route[route.length - 1]} icon={lucideMarkerIcon}>
+              <Popup>🎯 Destination</Popup>
+            </Marker>
+            <Polyline positions={route} color="#FF6B6B" weight={4} />
+          </>
+        )}
 
-        {/* Destination marker */}
-        <Marker position={destination} icon={lucideMarkerIcon}>
-          <Popup>📍 Destination</Popup>
-        </Marker>
+        {/* Temporary route selection pins */}
+        {pathOrigin && (
+          <Marker position={[pathOrigin.lat, pathOrigin.lng]} icon={lucideMarkerIcon}>
+            <Popup>Route Origin</Popup>
+          </Marker>
+        )}
+        {pathDestination && (
+          <Marker position={[pathDestination.lat, pathDestination.lng]} icon={lucideMarkerIcon}>
+            <Popup>Route Destination</Popup>
+          </Marker>
+        )}
 
-        {/* Route Polyline */}
-        {route.length > 0 && <Polyline positions={route} color="#FF6B6B" weight={4} />}
+        {/* Report pin */}
+        {reportCoords && (
+          <Marker position={[reportCoords.lat, reportCoords.lng]} icon={lucidePinIcon}>
+            <Popup>
+              <div className="text-sm">
+                📍 Selected Location
+                <br />
+                ({reportCoords.lat.toFixed(4)}, {reportCoords.lng.toFixed(4)})
+              </div>
+            </Popup>
+          </Marker>
+        )}
 
         {/* Fit map to route */}
         <FitBounds route={route} />
@@ -479,7 +513,11 @@ export default function NYCMap() {
           </Marker>
         )}
 
-        <ClickHandler selecting={selecting} onPick={handlePick} onSelectingChange={setSelecting} />
+        <ClickHandler
+          selecting={selecting || selectingForPath !== "none"}
+          onPick={handlePick}
+          onSelectingChange={selectingForPath === "none" ? setSelecting : undefined}
+        />
       </MapContainer>
 
       {/* Header */}
@@ -508,6 +546,17 @@ export default function NYCMap() {
             >
               <Flame className="w-4 h-4 mr-3 text-orange-500" />
               Heatmap Options
+            </button>
+
+            <button
+              onClick={() => {
+                handleOpenPathFinder();
+                setShowNav(false);
+              }}
+              className="w-full flex items-center px-4 py-3 text-sm font-medium text-gray-800 hover:bg-gray-50 transition-colors border-b border-gray-100"
+            >
+              <Navigation className="w-4 h-4 mr-3 text-indigo-500" />
+              Find a Path
             </button>
 
             <button
@@ -603,17 +652,33 @@ export default function NYCMap() {
       )}
 
       {/* Selection banner */}
-      {selecting && (
+      {(selecting || selectingForPath !== 'none') && (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] bg-[#FFD6A5] text-[#2B2B2B] px-5 py-2.5 rounded-full text-sm font-semibold shadow-lg border border-[#f0e3c0]">
-          👆 Click anywhere on the map to choose a location
+          👆 Click anywhere on the map to choose {selectingForPath !== 'none' ? selectingForPath : 'a location'}
         </div>
       )}
 
-      {/* Drawer */}
+      {/* PathFinder Drawer */}
+      <PathFinderDrawer
+        isOpen={pathFinderOpen}
+        onOpenChange={setPathFinderOpen}
+        clickedCoords={pathClickCoords}          // ← not report coords
+        selectMode={selectingForPath}
+        onRequestSelectOrigin={() => { setSelectingForPath("origin"); setPathClickCoords(null); }}
+        onRequestSelectDestination={() => { setSelectingForPath("destination"); setPathClickCoords(null); }}
+        onPathCalculated={handlePathCalculated}
+      />
+
       <ReportDrawer
-        clickedCoords={clickedCoords}
-        onDropMarker={handleDropMarker}
-        onRequestSelect={handleRequestSelect}
+        clickedCoords={reportCoords}             // ← report-only coords
+        onDropMarker={(lat, lng) => {
+          setReportCoords({ lat, lng });
+          mapRef.current?.flyTo([lat, lng], 15);
+        }}
+        onRequestSelect={() => {
+          setSelecting(true);
+          setReportCoords(null);
+        }}
         isOpen={drawerOpen}
         onOpenChange={setDrawerOpen}
       />
