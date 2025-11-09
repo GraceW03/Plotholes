@@ -18,7 +18,7 @@ from shapely.geometry import Point, Polygon as ShapelyPolygon
 import json
 from datetime import datetime
 import requests
-from .services.snowflake import parse_cortex_sse, format_prompt
+from .services.snowflake import parse_cortex_sse, format_prompt, run_sql
 
 # Load environment variables
 load_dotenv()
@@ -224,7 +224,7 @@ def create_app():
             # try:  
             #     with db.session.begin():
             #         db.session.add(blocked_edge)
-            # except Exception as e:
+            # except Exception e:
             #     return failure_response(f"DB Error: {str(e)}", 500)
 
             app.blocked_edges_set.add((u, v, k))
@@ -458,8 +458,13 @@ def create_app():
     # PAT from .env
     CORTEX_TOKEN = os.getenv("CORTEX_TOKEN")
 
-    @app.route("/test_cortex", methods=["POST"])
-    def test_cortex():
+    @app.route("/api/run_cortex", methods=["POST"])
+    def run_cortex():
+        """
+        Takes user query & uses Snowflake Cortex AI to convert it to SQL query.
+        Then, the SQL query gets executed in Snowflake.
+        This function returns a JSON of data.
+        """
         data = request.get_json()
         prompt = data.get("prompt")
         complete_prompt = format_prompt(prompt)
@@ -489,8 +494,11 @@ def create_app():
         print("Status code:", response.status_code)
         print("Response body:", text)
 
+        results = run_sql(text)
+        print(results)
+
         return jsonify({
-            "text": text
+            "results": results
         })
 
     # Error handlers

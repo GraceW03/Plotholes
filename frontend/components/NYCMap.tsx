@@ -414,6 +414,31 @@ const handlePick = (lat: number, lng: number) => {
     loadReports();
   }, []);
 
+  // TODO: ADD FRONTEND FOR THIS --- THIS IS UNTESTED!!
+  const callCortex = async (prompt: string) => {
+    try {
+      const response = await fetch("/api/run_cortex", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ prompt }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Cortex API error: ${response.status} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      console.log("Cortex results:", data.results);
+      return data.results; // This will be your SQL query results array
+    } catch (err) {
+      console.error("Error calling Cortex API:", err);
+      return null;
+    }
+  };
+
 const [showSplash, setShowSplash] = useState(true);
 const [fadeOut, setFadeOut] = useState(false);
 

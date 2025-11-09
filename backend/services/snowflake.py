@@ -1,5 +1,22 @@
 import json
 import sseclient
+import snowflake.connector
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env
+load_dotenv()
+
+# Snowflake connection config
+SNOWFLAKE_CONFIG = {
+    "user": os.getenv("SNOWFLAKE_USER"),
+    "password": os.getenv("SNOWFLAKE_PASSWORD"),
+    "account": os.getenv("SNOWFLAKE_ACCOUNT"),
+    "role": os.getenv("SNOWFLAKE_ROLE"),
+    "warehouse": os.getenv("SNOWFLAKE_WAREHOUSE"),
+    "database": os.getenv("SNOWFLAKE_DATABASE"),
+    "schema": os.getenv("SNOWFLAKE_SCHEMA")
+}
 
 def parse_cortex_sse(resp):
     """
@@ -31,6 +48,27 @@ def parse_cortex_sse(resp):
 
     return full_text
 
+def run_sql(raw_sql: str):
+    """
+    Cleans and executes a SQL query in Snowflake using env config.
+    Example output: 
+    [{'BOROUGH': 'QUEENS', 'REQUEST_COUNT': 23306}, {'BOROUGH': 'BROOKLYN', 'REQUEST_COUNT': 17316}, {'BOROUGH': 'MANHATTAN', 'REQUEST_COUNT': 11014}, {'BOROUGH': 'BRONX', 'REQUEST_COUNT': 6163}, {'BOROUGH': 'STATEN ISLAND', 'REQUEST_COUNT': 5726}, {'BOROUGH': 'Unspecified', 'REQUEST_COUNT': 117}]
+    """
+    sql = " ".join(raw_sql.strip().splitlines()).rstrip(";")
+    ctx = None
+    cs = None
+    try:
+        ctx = snowflake.connector.connect(**SNOWFLAKE_CONFIG)
+        cs = ctx.cursor()
+        cs.execute(sql)
+        columns = [col[0] for col in cs.description]
+        rows = cs.fetchall()
+        return [dict(zip(columns, row)) for row in rows]
+    finally:
+        if cs:
+            cs.close()
+        if ctx:
+            ctx.close()
 
 def format_prompt(user_query: str):
     """
