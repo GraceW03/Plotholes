@@ -439,26 +439,18 @@ const handlePick = (lat: number, lng: number) => {
 
         {/* Route Polyline & Pins */}
         {route.length > 0 && (
-          <>
-            <Marker position={route[0]} icon={lucideMarkerIcon}>
-              <Popup>📍 Origin</Popup>
-            </Marker>
-            <Marker position={route[route.length - 1]} icon={lucideMarkerIcon}>
-              <Popup>🎯 Destination</Popup>
-            </Marker>
-            <Polyline positions={route} color="#FF6B6B" weight={4} />
-          </>
+          <Polyline positions={route} color="#FF6B6B" weight={4} />
         )}
 
         {/* Temporary route selection pins */}
         {pathOrigin && (
           <Marker position={[pathOrigin.lat, pathOrigin.lng]} icon={lucideMarkerIcon}>
-            <Popup>Route Origin</Popup>
+            <Popup>📍 Origin</Popup>
           </Marker>
         )}
         {pathDestination && (
           <Marker position={[pathDestination.lat, pathDestination.lng]} icon={lucideMarkerIcon}>
-            <Popup>Route Destination</Popup>
+            <Popup>🎯 Destination</Popup>
           </Marker>
         )}
 
