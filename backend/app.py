@@ -520,6 +520,11 @@ def create_app():
     return app
 
 # Run using python -m backend.app
+# if __name__ == '__main__':
+#     app = create_app()
+#     app.run(debug=True, host='0.0.0.0', port=3001)
+
 if __name__ == '__main__':
     app = create_app()
-    app.run(debug=True, host='0.0.0.0', port=3001)
+    port = int(os.environ.get('PORT', 3001))
+    app.run(debug=False, host='0.0.0.0', port=port)

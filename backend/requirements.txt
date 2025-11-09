@@ -1,7 +1,6 @@
 requests
 pillow
 numpy
-ultralyticsplus
 torch
 
 # Flask Core
@@ -15,13 +14,10 @@ Flask-Migrate
 SQLAlchemy
 psycopg2-binary
 GeoAlchemy2
-snowflake-connector-python
-snowflake-ml-python
 sseclient-py
 
 # API & Utilities
-requests
-python-env
+python-dotenv
 marshmallow
 Werkzeug
 gunicorn
@@ -36,5 +32,18 @@ seaborn
 pytest
 pytest-flask
 
+# PyArrow (needed by snowflake, install first)
+pyarrow>=14.0.0
+
+# Snowflake
+snowflake-connector-python>=3.0.0
+snowflake-ml-python>=1.0.0
+
+# Scikit-learn (compatible with Python 3.12)
+scikit-learn<1.6
+
 # OSMNX
-osmnx==2.0.6
+osmnx>=2.0.6
+
+# ML/Vision (install last as it's large)
+ultralyticsplus
