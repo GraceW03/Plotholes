@@ -1,3 +1,9 @@
+requests
+pillow
+numpy
+ultralyticsplus
+torch
+
 # Flask Core
 Flask
 Flask-CORS
