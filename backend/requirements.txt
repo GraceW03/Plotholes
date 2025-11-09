@@ -29,7 +29,8 @@ gunicorn
 # Data Processing & Visualization
 matplotlib>=3.7.0
 seaborn>=0.12.0
-geopandas
+geopandas>=0.13.0
+shapely>=2.0.1
 
 # Snowflake
 snowflake-connector-python>=3.0.0

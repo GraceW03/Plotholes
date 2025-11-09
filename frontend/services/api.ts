@@ -1,5 +1,6 @@
 // API service for fetching heatmap data
-const API_BASE_URL = 'http://localhost:3001'; // TODO change to actual backend deployment
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+
 
 export interface Issue {
   unique_key: string;
@@ -75,7 +76,7 @@ export const fetchIssues = async (): Promise<IssuesResponse> => {
 };
 
 export async function fetchReports(): Promise<{ reports: Report[] }> {
-  const res = await fetch("http://localhost:3001/api/reports"); // or your backend endpoint
+  const res = await fetch(`${API_BASE_URL}/api/reports`); // or your backend endpoint
   if (!res.ok) throw new Error("Failed to fetch reports");
   return await res.json();
 }
