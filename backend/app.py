@@ -60,7 +60,34 @@ def create_app():
         })
     
 
-    @app.route('/issues', methods=['GET'])
+    @app.route('/api/analyze', methods=['POST'])
+    def analyze():
+        try:
+            data = request.get_json()
+            if not data or 'image_path' not in data:
+                return failure_response("Missing image_path", 400)
+                
+            from model import analyze_image
+            
+            # Check if this is a test image
+            is_test = data.get('is_test', False)
+            if is_test:
+                # Use the local test image
+                import os
+                base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                image_path = os.path.join(base_dir, 'data', 'test_photos', data['image_path'])
+                result = analyze_image(image_path, is_url=False)
+            else:
+                # Use the provided URL
+                result = analyze_image(data['image_path'], is_url=True)
+                
+            return success_response(result)
+                
+        except Exception as e:
+            app.logger.error(f"Error in /api/analyze: {str(e)}")
+            return failure_response(str(e), 500)
+
+    @app.route('/api/issues', methods=['GET'])
     def get_issues():
         """Get open issues for heatmap - raw SQL, no models needed"""
         try:
@@ -124,4 +151,4 @@ def create_app():
 
 if __name__ == '__main__':
     app = create_app()
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=True, host='0.0.0.0', port=3001)

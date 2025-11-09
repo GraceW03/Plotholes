@@ -35,12 +35,30 @@ export async function POST(req: NextRequest) {
 
     const imageUrl = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/plothole-uploads/${uploaded.path}`;
 
-    // ---- call Python backend model ----
-    const analyzeRes = await fetch(process.env.PYTHON_API_URL || "http://127.0.0.1:8000/analyze", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ image_url: imageUrl }),
-    });
+    // For testing with local images
+    const useTestImage = true; // Set to false to use the uploaded image
+    const testImageName = "pothole1.webp"; // or "pothole2.webp"
+    
+    const requestBody = useTestImage 
+      ? JSON.stringify({ 
+          image_path: testImageName, 
+          is_test: true 
+        })
+      : JSON.stringify({ 
+          image_path: imageUrl, 
+          is_test: false 
+        });
+
+    console.log("Sending request to analyze image:", requestBody);
+    
+    const analyzeRes = await fetch(
+      `${process.env.NEXT_PUBLIC_FLASK_API_URL || "http://127.0.0.1:3001"}/api/analyze`, 
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: requestBody,
+      }
+    );
 
     if (!analyzeRes.ok) {
       const text = await analyzeRes.text();
@@ -48,7 +66,8 @@ export async function POST(req: NextRequest) {
       throw new Error("Python model failed");
     }
 
-    const modelData = await analyzeRes.json();
+    const response = await analyzeRes.json();
+    const modelData = response.data || response; // Handle both response formats
 
     // ---- insert record into Supabase ----
     const { error: insertError } = await supabaseServer.from("reports").insert({
