@@ -14,6 +14,23 @@ export interface Issue {
   incident_address: string;
 }
 
+export interface Report {
+  idx: number;
+  id: string;
+  image_url: string;
+  latitude: number;
+  longitude: number;
+  severity: number;
+  severity_text: string;
+  confidence: number;
+  created_at: string;
+}
+
+export interface ReportsResponse {
+  reports: Report[];
+  count: number;
+}
+
 export interface NeighborhoodFeature {
   type: 'Feature';
   properties: {
@@ -53,6 +70,19 @@ export const fetchIssues = async (): Promise<IssuesResponse> => {
     return await response.json();
   } catch (error) {
     console.error('Error fetching issues:', error);
+    throw error;
+  }
+};
+
+export const fetchReports = async (): Promise<ReportsResponse> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/reports`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch reports');
+    }
+    return await response.json();
+  } catch (error) {
+    console.error('Error fetching reports:', error);
     throw error;
   }
 };

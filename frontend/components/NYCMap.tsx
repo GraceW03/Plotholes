@@ -15,7 +15,7 @@ import L from "leaflet";
 import { MapPin } from "lucide-react";
 import { renderToString } from "react-dom/server";
 import HeatmapControls, { HeatmapMode } from "./HeatmapControls";
-import { fetchIssues, fetchNeighborhoodBoundaries, Issue, NeighborhoodFeature } from "../services/api";
+import { fetchIssues, fetchNeighborhoodBoundaries, fetchReports, Issue, NeighborhoodFeature, Report as UserReport } from "../services/api";
 
 import ReportDrawer from "@/components/ReportDrawer";
 
@@ -77,18 +77,11 @@ function ClickHandler({
 }
 
 export default function NYCMap() {
-  const [reports, setReports] = useState<Report[]>([]);
+  const [reports] = useState<Report[]>([]); // Empty array since we load from API
   const [clickedCoords, setClickedCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [selecting, setSelecting] = useState(false);
   const mapRef = useRef<L.Map | null>(null);
 
-  // Load pothole dataset (optional)
-  useEffect(() => {
-    fetch("/data/nyc_potholes.geojson")
-      .then((res) => res.json())
-      .then(setReports)
-      .catch((err) => console.error("Failed to load data:", err));
-  }, []);
 
   /** Lucide pin icon rendered as static HTML for Leaflet */
   const lucidePinHTML = renderToString(<MapPin size={26} color="#FF6B6B" />);
@@ -124,6 +117,7 @@ export default function NYCMap() {
   const [isLoading, setIsLoading] = useState(false);
   const [issues, setIssues] = useState<Issue[]>([]);
   const [neighborhoods, setNeighborhoods] = useState<NeighborhoodFeature[]>([]);
+  const [userReports, setUserReports] = useState<UserReport[]>([]);
 
   // Initialize map ref
   const handleMapReady = (map: L.Map) => {
@@ -143,6 +137,19 @@ export default function NYCMap() {
     }
   };
 
+  // Load user reports data
+  const loadReports = async () => {
+    try {
+      setIsLoading(true);
+      const data = await fetchReports();
+      setUserReports(data.reports);
+    } catch (error) {
+      console.error('Failed to load reports:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Load neighborhood boundaries data
   const loadNeighborhoods = async () => {
     try {
@@ -156,9 +163,9 @@ export default function NYCMap() {
     }
   };
 
-  // Create heatmap layer from issues
+  // Create heatmap layer from issues and user reports
   const createIssuesHeatmap = () => {
-    if (!mapRef.current || issues.length === 0) return;
+    if (!mapRef.current || (issues.length === 0 && userReports.length === 0)) return;
 
     // Remove existing heat layer
     if (heatLayerRef.current) {
@@ -166,7 +173,7 @@ export default function NYCMap() {
     }
 
     // Convert issues to heatmap points [lat, lng, intensity]
-    const heatPoints: [number, number, number][] = issues
+    const issuePoints: [number, number, number][] = issues
       .filter(issue => issue.latitude && issue.longitude)
       .map(issue => [
         issue.latitude,
@@ -174,8 +181,22 @@ export default function NYCMap() {
         issue.severity / 5 // Normalize severity (1-5) to (0.2-1.0)
       ]);
 
+    // Convert user reports to heatmap points [lat, lng, intensity]
+    const reportPoints: [number, number, number][] = userReports
+      .filter(report => report.latitude && report.longitude)
+      .map(report => [
+        report.latitude,
+        report.longitude,
+        Math.max(report.severity / 5, 0.4) // Normalize severity (1-5) to (0.2-1.0), with minimum 0.4 for visibility
+      ]);
+
+    // Combine all points
+    const allHeatPoints = [...issuePoints, ...reportPoints];
+
+    if (allHeatPoints.length === 0) return;
+
     // Create heat layer with severity-based gradient
-    heatLayerRef.current = (L as any).heatLayer(heatPoints, {
+    heatLayerRef.current = (L as any).heatLayer(allHeatPoints, {
       radius: 25,
       blur: 15,
       maxZoom: 17,
@@ -259,8 +280,16 @@ export default function NYCMap() {
     // Add appropriate layer based on mode
     switch (heatmapMode) {
       case 'individual':
-        if (issues.length === 0) {
+        // Load both issues and reports if not already loaded
+        const needsIssues = issues.length === 0;
+        const needsReports = userReports.length === 0;
+
+        if (needsIssues && needsReports) {
+          Promise.all([loadIssues(), loadReports()]);
+        } else if (needsIssues) {
           loadIssues();
+        } else if (needsReports) {
+          loadReports();
         } else {
           createIssuesHeatmap();
         }
@@ -281,10 +310,10 @@ export default function NYCMap() {
 
   // Create heatmap when data is loaded
   useEffect(() => {
-    if (heatmapMode === 'individual' && issues.length > 0) {
+    if (heatmapMode === 'individual' && (issues.length > 0 || userReports.length > 0)) {
       createIssuesHeatmap();
     }
-  }, [issues]);
+  }, [issues, userReports]);
 
   useEffect(() => {
     if (heatmapMode === 'neighborhoods' && neighborhoods.length > 0) {
@@ -333,6 +362,7 @@ export default function NYCMap() {
             </Popup>
           </CircleMarker>
         ))}
+
 
         {/* 📍 Pin for selected or searched location */}
         {clickedCoords && (

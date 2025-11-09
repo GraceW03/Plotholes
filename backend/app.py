@@ -136,6 +136,16 @@ def create_app():
                 AND "Longitude" != ''
             """)
             
+            # Get user-submitted reports
+            reports_query = text("""
+                SELECT
+                    lat as latitude,
+                    lng as longitude,
+                    severity
+                FROM reports
+            """)
+            
+            # Process NYC street data issues
             result = db.session.execute(issues_query)
             issues = []
             for row in result:
@@ -144,6 +154,27 @@ def create_app():
                     lng = float(row.longitude)
                     severity = calculate_severity(row.descriptor)
                     issues.append({'lat': lat, 'lng': lng, 'severity': severity})
+                except (ValueError, TypeError):
+                    continue
+            
+            # Process user reports
+            reports_result = db.session.execute(reports_query)
+            for row in reports_result:
+                try:
+                    lat = float(row.latitude)
+                    lng = float(row.longitude)
+                    
+                    # Convert severity string to numeric value
+                    severity_map = {
+                        'none': 1,
+                        'low': 2,
+                        'medium': 3,
+                        'high': 4,
+                        'critical': 5
+                    }
+                    numeric_severity = severity_map.get(row.severity.lower() if row.severity else 'none', 1)
+                    
+                    issues.append({'lat': lat, 'lng': lng, 'severity': numeric_severity})
                 except (ValueError, TypeError):
                     continue
             
@@ -238,6 +269,59 @@ def create_app():
                 'count': len(enriched_neighborhoods)
             })
             
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+
+    @app.route('/api/reports', methods=['GET'])
+    def get_reports():
+        """Get user-submitted reports for heatmap"""
+        try:
+            # Query the reports table
+            query = text("""
+                SELECT
+                    id,
+                    image_url,
+                    lat,
+                    lng,
+                    severity,
+                    confidence,
+                    created_at
+                FROM reports
+                ORDER BY created_at DESC
+            """)
+            
+            result = db.session.execute(query)
+            
+            # Convert to list of dictionaries
+            reports = []
+            for row in result:
+                # Map severity string to numeric value for heatmap
+                severity_map = {
+                    'none': 1,
+                    'low': 2,
+                    'medium': 3,
+                    'high': 4,
+                    'critical': 5
+                }
+                
+                numeric_severity = severity_map.get(row.severity.lower() if row.severity else 'none', 1)
+                
+                reports.append({
+                    'id': row.id,
+                    'image_url': row.image_url,
+                    'latitude': float(row.lat) if row.lat else None,
+                    'longitude': float(row.lng) if row.lng else None,
+                    'severity': numeric_severity,
+                    'severity_text': row.severity,
+                    'confidence': row.confidence,
+                    'created_at': str(row.created_at)
+                })
+            
+            return success_response({
+                'reports': reports,
+                'count': len(reports)
+            })
+        
         except Exception as e:
             return jsonify({'error': str(e)}), 500
         
