@@ -4,6 +4,155 @@ import snowflake.connector
 import os
 from dotenv import load_dotenv
 
+import re
+
+def relax_equals_to_ilike(sql: str) -> str:
+    """
+    Loosens strict equality for known text columns so partial matches still return data.
+    Converts e.g.  "Descriptor" = 'Severe'  →  "Descriptor" ILIKE '%Severe%'.
+    """
+    text_cols = ["Descriptor", "Complaint Type", "Status", "Borough"]
+    for col in text_cols:
+        pattern = rf'"{col}"\s*=\s*\'([^\']+)\''
+        sql = re.sub(pattern, rf'"{col}" ILIKE \'%\1%\'', sql, flags=re.IGNORECASE)
+    return sql
+
+def safe_normalize_sql(sql: str) -> str:
+    """
+    Normalize Snowflake-style SQL to match local Postgres table schema.
+    Fixes column names and malformed ILIKE string patterns.
+    """
+    # Step 1 — Map uppercase Snowflake columns to local quoted names
+    # ONLY replace column names outside of string literals
+    mapping = {
+        "BOROUGH": '"Borough"',
+        "DESCRIPTOR": '"Descriptor"',
+        "COMPLAINT_TYPE": '"Complaint Type"',
+        "INCIDENT_ZIP": '"Incident Zip"',
+        "INCIDENT_ADDRESS": '"Incident Address"',
+        "STREET_NAME": '"Street Name"',
+        "STATUS": '"Status"',
+        "CREATED_DATE": '"Created Date"',
+        "CLOSED_DATE": '"Closed Date"',
+        "UNIQUE_KEY": '"Unique Key"',
+        "LATITUDE": '"Latitude"',
+        "LONGITUDE": '"Longitude"',
+        "LOCATION_TYPE": '"Location Type"',
+        "DUE_DATE": '"Due Date"',
+        "RESOLUTION_DESCRIPTION": '"Resolution Description"'
+    }
+    
+    # Split SQL by single quotes to separate string literals from code
+    parts = sql.split("'")
+    for i in range(len(parts)):
+        # Only process even indices (outside string literals)
+        # Odd indices are inside string literals - leave them alone
+        if i % 2 == 0:
+            for snow_col, pg_col in mapping.items():
+                # Use word boundaries and case-sensitive matching outside strings
+                parts[i] = re.sub(
+                    rf'\b{snow_col}\b',
+                    pg_col,
+                    parts[i],
+                    flags=re.IGNORECASE
+                )
+    
+    # Rejoin with single quotes
+    sql = "'".join(parts)
+
+    # Step 2 — Fix malformed ILIKE patterns (if any exist after column mapping)
+    # Pattern 1: '%%'text'%%' → '%text%'
+    sql = re.sub(
+        r"'%%'\s*'([^']+?)'\s*'%%'",
+        lambda m: f"'%{m.group(1).strip()}%'",
+        sql
+    )
+    
+    # Pattern 2: '%'text'%' → '%text%'
+    sql = re.sub(
+        r"'%'\s*'([^']+?)'\s*'%'",
+        lambda m: f"'%{m.group(1).strip()}%'",
+        sql
+    )
+
+    # Step 3 — Remove redundant double percents within quoted strings
+    sql = re.sub(r"'%%+([^']*?)%%+'", lambda m: f"'%{m.group(1)}%'", sql)
+
+    # Step 4 — Ensure single quotes around strings (no weird double quoting)
+    sql = re.sub(r"ILIKE\s+\"([^\"]+)\"", lambda m: f"ILIKE '{m.group(1)}'", sql)
+
+    return sql
+
+def fix_malformed_ilike_patterns(sql: str) -> str:
+    """
+    Final cleanup pass to fix any malformed ILIKE patterns that may have been
+    introduced by previous transformations.
+    """
+    # Fix pattern: '%%'text'%%' → '%text%'
+    # This specifically targets the broken pattern with quotes breaking up strings
+    sql = re.sub(
+        r"'%%'\s*'([^']+?)'\s*'%%'",
+        lambda m: f"'%{m.group(1).strip()}%'",
+        sql
+    )
+    
+    # Fix pattern: '%'text'%' → '%text%'
+    sql = re.sub(
+        r"'%'\s*'([^']+?)'\s*'%'",
+        lambda m: f"'%{m.group(1).strip()}%'",
+        sql
+    )
+
+    # Remove redundant double percents within quoted strings (but only within single quotes)
+    sql = re.sub(r"'%%+([^']*?)%%+'", lambda m: f"'%{m.group(1)}%'", sql)
+    
+    # Clean up any remaining %% to single % within quoted strings only
+    parts = sql.split("'")
+    for i in range(1, len(parts), 2):  # Only odd indices (inside strings)
+        parts[i] = parts[i].replace("%%", "%")
+    sql = "'".join(parts)
+
+    return sql
+
+def snowflake_to_postgres(sql: str) -> str:
+    """
+    Convert Snowflake-specific SQL functions to PostgreSQL equivalents,
+    and handle text-based datetime columns like "Created Date".
+    """
+    # YEAR() → EXTRACT(YEAR FROM TO_TIMESTAMP("Created Date", 'MM/DD/YYYY HH12:MI:SS AM'))
+    sql = re.sub(
+        r'\bYEAR\s*\(\s*("Created Date"|CREATED_DATE)\s*\)',
+        r"EXTRACT(YEAR FROM TO_TIMESTAMP(\1, 'MM/DD/YYYY HH12:MI:SS AM'))",
+        sql,
+        flags=re.IGNORECASE
+    )
+
+    # MONTH() → EXTRACT(MONTH FROM TO_TIMESTAMP("Created Date", 'MM/DD/YYYY HH12:MI:SS AM'))
+    sql = re.sub(
+        r'\bMONTH\s*\(\s*("Created Date"|CREATED_DATE)\s*\)',
+        r"EXTRACT(MONTH FROM TO_TIMESTAMP(\1, 'MM/DD/YYYY HH12:MI:SS AM'))",
+        sql,
+        flags=re.IGNORECASE
+    )
+
+    # DAY() → EXTRACT(DAY FROM TO_TIMESTAMP("Created Date", 'MM/DD/YYYY HH12:MI:SS AM'))
+    sql = re.sub(
+        r'\bDAY\s*\(\s*("Created Date"|CREATED_DATE)\s*\)',
+        r"EXTRACT(DAY FROM TO_TIMESTAMP(\1, 'MM/DD/YYYY HH12:MI:SS AM'))",
+        sql,
+        flags=re.IGNORECASE
+    )
+
+    # (Optional) Catch any stray EXTRACTs not wrapped correctly and fix them
+    sql = re.sub(
+        r'EXTRACT\((YEAR|MONTH|DAY)\s+FROM\s+"Created Date"\)',
+        r"EXTRACT(\1 FROM TO_TIMESTAMP(\"Created Date\", 'MM/DD/YYYY HH12:MI:SS AM'))",
+        sql,
+        flags=re.IGNORECASE
+    )
+
+    return sql
+
 # Load environment variables from .env
 load_dotenv()
 
@@ -51,10 +200,20 @@ def parse_cortex_sse(resp):
 def run_sql(raw_sql: str):
     """
     Cleans and executes a SQL query in Snowflake using env config.
-    Example output: 
-    [{'BOROUGH': 'QUEENS', 'REQUEST_COUNT': 23306}, {'BOROUGH': 'BROOKLYN', 'REQUEST_COUNT': 17316}, {'BOROUGH': 'MANHATTAN', 'REQUEST_COUNT': 11014}, {'BOROUGH': 'BRONX', 'REQUEST_COUNT': 6163}, {'BOROUGH': 'STATEN ISLAND', 'REQUEST_COUNT': 5726}, {'BOROUGH': 'Unspecified', 'REQUEST_COUNT': 117}]
     """
     sql = " ".join(raw_sql.strip().splitlines()).rstrip(";")
+
+    print("BEFORE safe_normalize_sql:", sql)
+    
+    # Normalize SQL syntax for Postgres-like compatibility
+    sql = safe_normalize_sql(sql)
+    
+    print("AFTER safe_normalize_sql:", sql)
+    
+    sql = relax_equals_to_ilike(sql)
+    
+    print("AFTER relax_equals_to_ilike:", sql)
+
     ctx = None
     cs = None
     try:
@@ -69,6 +228,7 @@ def run_sql(raw_sql: str):
             cs.close()
         if ctx:
             ctx.close()
+
 
 def format_prompt(user_query: str):
     """
@@ -145,6 +305,24 @@ def format_prompt(user_query: str):
 
 # ## 3. Instructions for SQL Generation
 
+# ## CRITICAL Data Structure Notes:
+# - **COMPLAINT_TYPE** contains the general category (e.g., "Street Condition")
+# - **DESCRIPTOR** contains the specific issue type like 'Pothole', 'Cave-in', 'Defective Hardware', 'Rough, Pitted or Cracked Roads', etc.
+# - When users ask about potholes, road damage, cave-ins, etc., search the DESCRIPTOR column
+# - The DESCRIPTOR column also indicates severity: 'Pothole', 'Cave-in', 'Severe Condition', etc.
+
+# ## Severity Mapping (for DESCRIPTOR):
+# - 'Severe' or 'Critical' or 'Cave-in' → 5
+# - 'High' or 'Major' → 4
+# - 'Medium', 'Moderate' → 3
+# - 'Low', 'Minor', 'Slight', 'Pothole' → 2
+# - others → 1
+
+# - Generate **syntactically correct SQL** that will run in Snowflake without errors
+# - When filtering by issue type (pothole, cave-in, etc.), use the DESCRIPTOR column
+# - Use ILIKE '%keyword%' for flexible text matching
+# - When the user asks for “most severe”, “worst”, or “highest severity”, **calculate** severity from the descriptors, don’t filter for 'Severe'.
+# - Group by borough and return counts or averages of severity.
 # - Only use the columns provided in the metadata.  
 # - Generate efficient SQL, avoid unnecessary joins or subqueries.  
 # - Apply filters, aggregations, or sorting if implied by the request.  
@@ -164,6 +342,24 @@ def format_prompt(user_query: str):
     "{user_query}"
 
     ## Instructions
+    ## CRITICAL Data Structure Notes:
+    - **COMPLAINT_TYPE** contains the general category (e.g., "Street Condition")
+    - **DESCRIPTOR** contains the specific issue type like 'Pothole', 'Cave-in', 'Defective Hardware', 'Rough, Pitted or Cracked Roads', etc.
+    - When users ask about potholes, road damage, cave-ins, etc., search the DESCRIPTOR column
+    - The DESCRIPTOR column also indicates severity: 'Pothole', 'Cave-in', 'Severe Condition', etc.
+
+    ## Severity Mapping (for DESCRIPTOR):
+    - 'Severe' or 'Critical' or 'Cave-in' → 5
+    - 'High' or 'Major' → 4
+    - 'Medium', 'Moderate' → 3
+    - 'Low', 'Minor', 'Slight', 'Pothole' → 2
+    - others → 1
+
+    - Generate **syntactically correct SQL** that will run in Snowflake without errors
+    - When filtering by issue type (pothole, cave-in, etc.), use the DESCRIPTOR column
+    - Use ILIKE '%keyword%' for flexible text matching
+    - When the user asks for “most severe”, “worst”, or “highest severity”, **calculate** severity from the descriptors, don’t filter for 'Severe'.
+    - Group by borough and return counts or averages of severity.
     - Generate **syntactically correct SQL** for the user request that will run in Snowflake without errors. Be precise, efficient, and include only needed columns.
     - Only use columns listed above.
     - Apply filters, aggregation, or sorting if implied.

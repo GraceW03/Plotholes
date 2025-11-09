@@ -18,7 +18,7 @@ from shapely.geometry import Point, Polygon as ShapelyPolygon
 import json
 from datetime import datetime
 import requests
-from .services.snowflake import parse_cortex_sse, format_prompt, run_sql
+from .services.snowflake import parse_cortex_sse, format_prompt, run_sql, snowflake_to_postgres
 
 # Load environment variables
 load_dotenv()
@@ -458,13 +458,11 @@ def create_app():
     # PAT from .env
     CORTEX_TOKEN = os.getenv("CORTEX_TOKEN")
 
+
     @app.route("/api/run_cortex", methods=["POST"])
     def run_cortex():
-        """
-        Takes user query & uses Snowflake Cortex AI to convert it to SQL query.
-        Then, the SQL query gets executed in Snowflake.
-        This function returns a JSON of data.
-        """
+        from .services.snowflake import safe_normalize_sql, fix_malformed_ilike_patterns
+        
         data = request.get_json()
         prompt = data.get("prompt")
         complete_prompt = format_prompt(prompt)
@@ -480,7 +478,6 @@ def create_app():
         }
 
         cortex_url = f"https://{os.getenv('SNOWFLAKE_ACCOUNT')}.snowflakecomputing.com/api/v2/cortex/inference:complete"
-
         response = requests.post(cortex_url, headers=headers, json=payload, stream=True)
 
         if response.status_code >= 400:
@@ -488,18 +485,28 @@ def create_app():
                 "error": "Cortex API call failed",
                 "details": response.text
             }), response.status_code
-    
+        
         text = parse_cortex_sse(response)
-
         print("Status code:", response.status_code)
         print("Response body:", text)
 
-        results = run_sql(text)
-        print(results)
+        # Normalize Snowflake SQL to local Postgres schema using proper functions
+        normalized_sql = text.replace("PLOTHOLES.NYC_STREET_DATA.STREET_DATA", "nyc_street_data")
+        normalized_sql = safe_normalize_sql(normalized_sql)
+        normalized_sql = snowflake_to_postgres(normalized_sql)  # Add this line
+        normalized_sql = fix_malformed_ilike_patterns(normalized_sql)
 
-        return jsonify({
-            "results": results
-        })
+        print("Running normalized SQL:", normalized_sql)
+        
+        if "nyc_street_data" in normalized_sql.lower():
+            from sqlalchemy import text as sql_text
+            with db.engine.connect() as conn:
+                result = conn.execute(sql_text(normalized_sql))
+                rows = [dict(row._mapping) for row in result]
+            return jsonify({"results": rows})
+        else:
+            results = run_sql(normalized_sql)
+            return jsonify({"results": results})
 
     # Error handlers
     @app.errorhandler(404)

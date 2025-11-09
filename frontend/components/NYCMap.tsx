@@ -5,12 +5,13 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, CircleMarker 
 import "leaflet/dist/leaflet.css";
 import "leaflet.heat";
 import L from "leaflet";
-import { MapPin, Menu, X, FilePlus, Flame, Grid3x3, Navigation } from "lucide-react";
+import { MapPin, Menu, X, FilePlus, Flame, Grid3x3, Navigation, Brain } from "lucide-react";
 import { renderToString } from "react-dom/server";
 import { HeatmapMode } from "./HeatmapControls";
 import { fetchIssues, fetchNeighborhoodBoundaries, fetchReports, Issue, NeighborhoodFeature, Report as UserReport } from "../services/api";
 import ReportDrawer from "@/components/ReportDrawer";
 import PathFinderDrawer from "@/components/PathFinderDrawer";
+import CortexDrawer from "@/components/CortexDrawer";
 
 interface Report {
   id: string;
@@ -117,6 +118,7 @@ export default function NYCMap() {
   const [pathDestination, setPathDestination] = useState<{ lat: number; lng: number } | null>(null);
   const [reportCoords, setReportCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [pathClickCoords, setPathClickCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [cortexOpen, setCortexOpen] = useState(false);
 
   const mapRef = useRef<L.Map | null>(null);
 
@@ -414,14 +416,11 @@ const handlePick = (lat: number, lng: number) => {
     loadReports();
   }, []);
 
-  // TODO: ADD FRONTEND FOR THIS --- THIS IS UNTESTED!!
   const callCortex = async (prompt: string) => {
     try {
-      const response = await fetch("/api/run_cortex", {
+      const response = await fetch("http://localhost:3001/api/run_cortex", { // ← updated URL
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt }),
       });
 
@@ -431,29 +430,27 @@ const handlePick = (lat: number, lng: number) => {
       }
 
       const data = await response.json();
-      console.log("Cortex results:", data.results);
-      return data.results; // This will be your SQL query results array
+      console.log("✅ Cortex results:", data.results);
+      return data.results;
     } catch (err) {
       console.error("Error calling Cortex API:", err);
       return null;
     }
   };
 
-const [showSplash, setShowSplash] = useState(true);
-const [fadeOut, setFadeOut] = useState(false);
+  const [showSplash, setShowSplash] = useState(true);
+  const [fadeOut, setFadeOut] = useState(false);
 
-useEffect(() => {
-  // Step 1: show splash for ~2 seconds
-  const timer = setTimeout(() => {
-    setFadeOut(true); // trigger fade-out CSS
-    // Step 2: unmount after fade transition
-    setTimeout(() => setShowSplash(false), 800);
-  }, 2000);
+  useEffect(() => {
+    // Step 1: show splash for ~2 seconds
+    const timer = setTimeout(() => {
+      setFadeOut(true); // trigger fade-out CSS
+      // Step 2: unmount after fade transition
+      setTimeout(() => setShowSplash(false), 800);
+    }, 2000);
 
-  return () => clearTimeout(timer);
-}, []);
-
-
+    return () => clearTimeout(timer);
+  }, []);
 
   return (
     <div className="h-screen w-full relative bg-[#FFF9F3]">
@@ -663,10 +660,21 @@ useEffect(() => {
                 handleOpenNewReport();
                 setShowNav(false);
               }}
-              className="w-full flex items-center px-4 py-3 text-sm font-medium text-gray-800 hover:bg-gray-50 transition-colors"
+              className="w-full flex items-center px-4 py-3 text-sm font-medium text-gray-800 hover:bg-gray-50 transition-colors border-b border-gray-100"
             >
               <FilePlus className="w-4 h-4 mr-3 text-green-500" />
               New Report
+            </button>
+
+            <button
+              onClick={() => {
+                setCortexOpen(true);
+                setShowNav(false);
+              }}
+              className="w-full flex items-center px-4 py-3 text-sm font-medium text-gray-800 hover:bg-gray-50 transition-colors border-b border-gray-100"
+            >
+              <Brain className="w-4 h-4 mr-3 text-pink-500" />
+              Insights
             </button>
           </div>
         )}
@@ -780,6 +788,12 @@ useEffect(() => {
         }}
         isOpen={drawerOpen}
         onOpenChange={setDrawerOpen}
+      />
+
+      <CortexDrawer
+        isOpen={cortexOpen}
+        onOpenChange={setCortexOpen}
+        callCortex={callCortex}
       />
     </div>
   );
