@@ -17,7 +17,6 @@ def main():
     if not os.path.exists('.env'):
         print("⚠️  No .env file found!")
         print("📋 Copy .env.example to .env and configure your database")
-        print("💡 For quick start, you can use SQLite by setting:")
         print("   DEV_DATABASE_URL=sqlite:///plotholes.db")
         
         # Ask if user wants to continue with default SQLite

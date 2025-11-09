@@ -1,11 +1,14 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, CircleMarker } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
+import "leaflet.heat";
 import L from "leaflet";
 import { MapPin } from "lucide-react";
 import { renderToString } from "react-dom/server";
+import HeatmapControls, { HeatmapMode } from "./HeatmapControls";
+import { fetchIssues, fetchNeighborhoodBoundaries, fetchReports, Issue, NeighborhoodFeature, Report as UserReport } from "../services/api";
 import ReportDrawer from "@/components/ReportDrawer";
 
 interface Report {
@@ -49,16 +52,16 @@ function ClickHandler({
     };
   }, [map, selecting]);
 
-    useEffect(() => {
+  useEffect(() => {
     const handleClick = (e: L.LeafletMouseEvent) => {
       if (!selectingRef.current) return;
       const { lat, lng } = e.latlng;
       onPick(lat, lng);
       onSelectingChange?.(false);
     };
-    
+
     map.on("click", handleClick);
-    
+
     // Cleanup function - just remove the event listener, don't return anything
     return () => {
       map.off("click", handleClick);
@@ -68,14 +71,28 @@ function ClickHandler({
   return null;
 }
 
-// Component to automatically fit map to route
+// Component to automatically fit map to route (but only once per route)
 function FitBounds({ route }: { route: [number, number][] }) {
   const map = useMap();
+  const hasFittedRef = useRef(false);
+  const prevHashRef = useRef<string>("");
 
   useEffect(() => {
-    if (route.length > 0) {
-      const bounds = L.latLngBounds(route); // creates bounds that encompass all route points
-      map.fitBounds(bounds, { padding: [50, 50] }); // add padding so markers aren't at the edge
+    if (route.length === 0) return;
+
+    // simple hash to detect route changes
+    const hash = route.map(([lat, lng]) => `${lat.toFixed(3)},${lng.toFixed(3)}`).join("|");
+
+    if (hash !== prevHashRef.current) {
+      prevHashRef.current = hash;
+      hasFittedRef.current = false;
+    }
+
+    // only fit once per new route
+    if (!hasFittedRef.current) {
+      const bounds = L.latLngBounds(route);
+      map.fitBounds(bounds, { padding: [50, 50] });
+      hasFittedRef.current = true;
     }
   }, [route, map]);
 
@@ -83,11 +100,18 @@ function FitBounds({ route }: { route: [number, number][] }) {
 }
 
 export default function NYCMap() {
-
-  const [reports, setReports] = useState<Report[]>([]);
+  const [reports] = useState<Report[]>([]); // Empty array since we load from API
   const [clickedCoords, setClickedCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [selecting, setSelecting] = useState(false);
   const mapRef = useRef<L.Map | null>(null);
+
+  // Load pothole dataset (optional)
+  useEffect(() => {
+    fetch("/data/nyc_potholes.geojson")
+      .then((res) => res.json())
+      .then(setUserReports)
+      .catch((err) => console.error("Failed to load data:", err));
+  }, []);
 
   /** Lucide pin icon rendered as static HTML for Leaflet */
   const lucidePinHTML = renderToString(<MapPin size={26} color="#FF6B6B" />);
@@ -151,10 +175,10 @@ export default function NYCMap() {
       const [startLng, startLat] = [start[1], start[0]];
       const [endLng, endLat] = [end[1], end[0]];
       const url = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`;
-      
+
       const response = await fetchWithRetry(url);
       const data = await response.json();
-      
+
       if (data.routes?.[0]?.geometry?.coordinates) {
         return data.routes[0].geometry.coordinates.map((coord: [number, number]) => [coord[1], coord[0]]);
       }
@@ -189,13 +213,235 @@ export default function NYCMap() {
     };
 
     fetchRoute();
-    
+
     return () => {
       isMounted = false;
     };
   }, [origin, destination]);
 
+  const heatLayerRef = useRef<any>(null); // Using any for leaflet.heat layer
+  const neighborhoodLayerRef = useRef<L.LayerGroup | null>(null);
+
+  const [heatmapMode, setHeatmapMode] = useState<HeatmapMode>('off');
+  // setIsLoading(false);
+  const [issues, setIssues] = useState<Issue[]>([]);
+  const [neighborhoods, setNeighborhoods] = useState<NeighborhoodFeature[]>([]);
+  const [userReports, setUserReports] = useState<UserReport[]>([]);
+
+  // Initialize map ref
+  const handleMapReady = (map: L.Map) => {
+    mapRef.current = map;
+  };
+
+  // Separate loading states for different data types
+  const [issuesLoading, setIssuesLoading] = useState(false);
+  const [reportsLoading, setReportsLoading] = useState(false);
+  const [neighborhoodsLoading, setNeighborhoodsLoading] = useState(false);
+
+  // Load individual issues data
+  const loadIssues = async () => {
+    if (issuesLoading) return; // Prevent multiple concurrent requests
+    try {
+      setIssuesLoading(true);
+      const data = await fetchIssues();
+      setIssues(data.issues);
+    } catch (error) {
+      console.error('Failed to load issues:', error);
+    } finally {
+      setIssuesLoading(false);
+    }
+  };
+
+  // Load user reports data
+  const loadReports = async () => {
+    if (reportsLoading) return; // Prevent multiple concurrent requests
+    try {
+      setReportsLoading(true);
+      const data = await fetchReports();
+      setUserReports(data.reports);
+    } catch (error) {
+      console.error('Failed to load reports:', error);
+    } finally {
+      setReportsLoading(false);
+    }
+  };
+
+  // Load neighborhood boundaries data
+  const loadNeighborhoods = async () => {
+    if (neighborhoodsLoading) return; // Prevent multiple concurrent requests
+    try {
+      setNeighborhoodsLoading(true);
+      const data = await fetchNeighborhoodBoundaries();
+      setNeighborhoods(data.features);
+    } catch (error) {
+      console.error('Failed to load neighborhoods:', error);
+    } finally {
+      setNeighborhoodsLoading(false);
+    }
+  };
+
+  // Create heatmap layer from issues and user reports
+  const createIssuesHeatmap = () => {
+    if (!mapRef.current || (issues.length === 0 && userReports.length === 0)) return;
+
+    // Remove existing heat layer
+    if (heatLayerRef.current) {
+      mapRef.current.removeLayer(heatLayerRef.current);
+    }
+
+    // Convert issues to heatmap points [lat, lng, intensity]
+    const issuePoints: [number, number, number][] = issues
+      .filter(issue => issue.latitude && issue.longitude)
+      .map(issue => [
+        issue.latitude,
+        issue.longitude,
+        issue.severity / 5 // Normalize severity (1-5) to (0.2-1.0)
+      ]);
+
+    // Convert user reports to heatmap points [lat, lng, intensity]
+    const reportPoints: [number, number, number][] = userReports
+      .filter(report => report.latitude && report.longitude)
+      .map(report => [
+        report.latitude,
+        report.longitude,
+        Math.max(report.severity / 5, 0.4) // Normalize severity (1-5) to (0.2-1.0), with minimum 0.4 for visibility
+      ]);
+
+    // Combine all points
+    const allHeatPoints = [...issuePoints, ...reportPoints];
+
+    if (allHeatPoints.length === 0) return;
+
+    // Create heat layer with severity-based gradient
+    heatLayerRef.current = (L as any).heatLayer(allHeatPoints, {
+      radius: 25,
+      blur: 15,
+      maxZoom: 17,
+      gradient: {
+        0.2: '#00ff00', // Low severity - green
+        0.4: '#ffff00', // Low-medium severity - yellow
+        0.6: '#ff9900', // Medium severity - orange
+        0.8: '#ff0000', // High severity - red
+        1.0: '#990000'  // Critical severity - dark red
+      }
+    });
+
+    mapRef.current.addLayer(heatLayerRef.current);
+  };
+
+  // Create neighborhood polygons layer
+  const createNeighborhoodsLayer = () => {
+    if (!mapRef.current || neighborhoods.length === 0) return;
+
+    // Remove existing neighborhood layer
+    if (neighborhoodLayerRef.current) {
+      mapRef.current.removeLayer(neighborhoodLayerRef.current);
+    }
+
+    neighborhoodLayerRef.current = L.layerGroup();
+
+    neighborhoods.forEach(feature => {
+      // Create polygon from GeoJSON geometry
+      const coordinates = feature.geometry.coordinates[0].map(coord => [coord[1], coord[0]] as [number, number]);
+
+      // Color based on risk level
+      const getNeighborhoodStyle = (riskLevel: string) => {
+        switch (riskLevel) {
+          case 'critical': return { color: '#990000', fillColor: '#990000', fillOpacity: 0.6 };
+          case 'high': return { color: '#ff0000', fillColor: '#ff0000', fillOpacity: 0.5 };
+          case 'medium': return { color: '#ff9900', fillColor: '#ff9900', fillOpacity: 0.4 };
+          case 'low': return { color: '#ffff00', fillColor: '#ffff00', fillOpacity: 0.3 };
+          default: return { color: '#00ff00', fillColor: '#00ff00', fillOpacity: 0.2 };
+        }
+      };
+
+      const polygon = L.polygon(coordinates, {
+        ...getNeighborhoodStyle(feature.properties.risk_level),
+        weight: 2
+      });
+
+      // Add popup with neighborhood information
+      polygon.bindPopup(`
+        <div class="p-2">
+          <h3 class="font-semibold text-lg">${feature.properties.neighborhood || 'Unknown Neighborhood'}</h3>
+          <div class="mt-2 space-y-1 text-sm">
+            <div><strong>Borough:</strong> ${feature.properties.borough || 'Unknown'}</div>
+            <div><strong>Risk Level:</strong> ${feature.properties.risk_level.toUpperCase()}</div>
+            <div><strong>Issues:</strong> ${feature.properties.issue_count}</div>
+            <div><strong>Avg Severity:</strong> ${feature.properties.avg_severity.toFixed(1)}/5</div>
+            <div><strong>Risk Score:</strong> ${feature.properties.risk_score.toFixed(2)}</div>
+          </div>
+        </div>
+      `);
+
+      neighborhoodLayerRef.current!.addLayer(polygon);
+    });
+
+    mapRef.current.addLayer(neighborhoodLayerRef.current);
+  };
+
+  // Handle heatmap mode changes
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    // Remove existing layers
+    if (heatLayerRef.current) {
+      mapRef.current.removeLayer(heatLayerRef.current);
+      heatLayerRef.current = null;
+    }
+    if (neighborhoodLayerRef.current) {
+      mapRef.current.removeLayer(neighborhoodLayerRef.current);
+      neighborhoodLayerRef.current = null;
+    }
+
+    // Add appropriate layer based on mode
+    switch (heatmapMode) {
+      case 'individual':
+        // Load both issues and reports if not already loaded
+        const needsIssues = issues.length === 0;
+        const needsReports = userReports.length === 0;
+
+        if (needsIssues && needsReports) {
+          Promise.all([loadIssues(), loadReports()]).catch(error => {
+            console.error('Failed to load data:', error);
+          });
+        } else if (needsIssues) {
+          loadIssues();
+        } else if (needsReports) {
+          loadReports();
+        } else {
+          createIssuesHeatmap();
+        }
+        break;
+      case 'neighborhoods':
+        if (neighborhoods.length === 0) {
+          loadNeighborhoods();
+        } else {
+          createNeighborhoodsLayer();
+        }
+        break;
+      case 'off':
+      default:
+        // Layers already removed above
+        break;
+    }
+  }, [heatmapMode, mapRef.current]);
+
+  // Create heatmap when data is loaded
+  useEffect(() => {
+    if (heatmapMode === 'individual' && (issues.length > 0 || userReports.length > 0)) {
+      createIssuesHeatmap();
+    }
+  }, [issues, userReports]);
+
+  useEffect(() => {
+    if (heatmapMode === 'neighborhoods' && neighborhoods.length > 0) {
+      createNeighborhoodsLayer();
+    }
+  }, [neighborhoods]);
+
   return (
+
     <div className="h-screen w-full relative bg-[#FFF9F3]">
       {isLoading && (
         <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-white/90 px-4 py-2 rounded-lg shadow-lg z-50 flex items-center gap-2">
@@ -208,9 +454,10 @@ export default function NYCMap() {
         zoom={11}
         scrollWheelZoom
         style={{ height: "100%", width: "100%" }}
+      // whenCreated={handleMapReady}
       >
-        {/* hand the real map instance to mapRef without whenCreated/whenReady */}
-        <MapRefBridge onInit={(m) => (mapRef.current = m)} />
+        {/* hand the real map instance to mapRef */}
+        <MapRefBridge onInit={handleMapReady} />
 
         <TileLayer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -252,8 +499,8 @@ export default function NYCMap() {
             pathOptions={{
               color:
                 r.Status === "Closed" ? "#9bf6ff" :
-                r.Status === "Open"   ? "#ffadad" :
-                                       "#ffd6a5",
+                  r.Status === "Open" ? "#ffadad" :
+                    "#ffd6a5",
               fillOpacity: 0.9,
             }}
           >
@@ -281,6 +528,32 @@ export default function NYCMap() {
           </Marker>
         )}
 
+        {/* Map center marker */}
+        <Marker position={center} icon={lucidePinIcon}>
+          <Popup>
+            <div className="font-semibold">📍 New York City</div>
+            <p className="text-sm text-zinc-600">NYC map with custom marker</p>
+          </Popup>
+        </Marker>
+
+        {/* Origin marker */}
+        <Marker position={origin} icon={lucidePinIcon}>
+          <Popup>Origin</Popup>
+        </Marker>
+
+        {/* Destination marker */}
+        <Marker position={destination} icon={lucidePinIcon}>
+          <Popup>Destination</Popup>
+        </Marker>
+
+        {/* Route Polyline */}
+        {route.length > 0 && (
+          <Polyline positions={route} color="red" weight={4} />
+        )}
+
+        {/* Fit map to route */}
+        <FitBounds route={route} />
+
         <ClickHandler selecting={selecting} onPick={handlePick} onSelectingChange={setSelecting} />
       </MapContainer>
 
@@ -297,6 +570,13 @@ export default function NYCMap() {
           👆 Click anywhere on the map to choose a location
         </div>
       )}
+
+      {/* Heatmap Controls */}
+      <HeatmapControls
+        mode={heatmapMode}
+        onModeChange={setHeatmapMode}
+        isLoading={issuesLoading || reportsLoading || neighborhoodsLoading}
+      />
 
       {/* Drawer */}
       <ReportDrawer
