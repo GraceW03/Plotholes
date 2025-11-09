@@ -221,11 +221,11 @@ def create_app():
         if (u, v, k) not in app.blocked_edges_set:
             blocked_edge = BlockedEdges(u=u, v=v, k=k, reported_at=datetime.now())
 
-            try:  
-                with db.session.begin():
-                    db.session.add(blocked_edge)
-            except Exception as e:
-                return failure_response(f"DB Error: {str(e)}", 500)
+            # try:  
+            #     with db.session.begin():
+            #         db.session.add(blocked_edge)
+            # except Exception as e:
+            #     return failure_response(f"DB Error: {str(e)}", 500)
 
             app.blocked_edges_set.add((u, v, k))
             print(f"Blocked Edge added: {(u,v,k)}")
