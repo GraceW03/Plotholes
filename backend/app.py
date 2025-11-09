@@ -93,7 +93,7 @@ def create_app():
             if not data or 'image_path' not in data:
                 return failure_response("Missing image_path", 400)
                 
-            from model import analyze_image
+            from .model import analyze_image
             
             # Check if this is a test image
             is_test = data.get('is_test', False)
