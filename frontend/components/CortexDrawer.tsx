@@ -78,7 +78,7 @@ export default function CortexDrawer({ isOpen, onOpenChange, callCortex }: Corte
 
   return (
     <div
-      className={`fixed bottom-0 right-0 w-full sm:w-[400px] h-[60%] bg-white shadow-2xl border-t border-l border-gray-200 rounded-t-3xl transform transition-transform duration-300 z-[1200] ${
+      className={`fixed bottom-4 right-0 w-full sm:w-[400px] h-[60%] bg-white shadow-2xl border-t border-l border-gray-200 rounded-t-3xl transform transition-transform duration-300 z-[1200] ${
         isOpen ? "translate-y-0" : "translate-y-full"
       }`}
     >
