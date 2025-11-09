@@ -1,5 +1,5 @@
 // API service for fetching heatmap data
-const API_BASE_URL = 'http://localhost:5000'; // TODO change to actual backend deployment
+const API_BASE_URL = 'http://localhost:3001'; // TODO change to actual backend deployment
 
 export interface Issue {
   unique_key: string;
@@ -63,7 +63,7 @@ export interface NeighborhoodBoundariesResponse {
 
 export const fetchIssues = async (): Promise<IssuesResponse> => {
   try {
-    const response = await fetch(`${API_BASE_URL}/issues`);
+    const response = await fetch(`${API_BASE_URL}/api/issues`);
     if (!response.ok) {
       throw new Error('Failed to fetch issues');
     }

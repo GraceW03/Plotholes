@@ -109,7 +109,7 @@ export default function NYCMap() {
   useEffect(() => {
     fetch("/data/nyc_potholes.geojson")
       .then((res) => res.json())
-      .then(setReports)
+      .then(setUserReports)
       .catch((err) => console.error("Failed to load data:", err));
   }, []);
 
