@@ -5,20 +5,20 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap, CircleMarker 
 import "leaflet/dist/leaflet.css";
 import "leaflet.heat";
 import L from "leaflet";
-import { MapPin, Menu, X, FilePlus, Flame, Grid3x3 } from "lucide-react";
+import { MapPin, Menu, X, FilePlus, Flame, Grid3x3, Navigation } from "lucide-react";
 import { renderToString } from "react-dom/server";
-import HeatmapControls, { HeatmapMode } from "./HeatmapControls";
+import { HeatmapMode } from "./HeatmapControls";
 import { fetchIssues, fetchNeighborhoodBoundaries, fetchReports, Issue, NeighborhoodFeature, Report as UserReport } from "../services/api";
 import ReportDrawer from "@/components/ReportDrawer";
+import PathFinderDrawer from "@/components/PathFinderDrawer";
 
 interface Report {
-  UniqueKey: string;
-  Latitude: number;
-  Longitude: number;
-  Status: string;
-  Borough: string;
-  Descriptor: string;
-  CreatedDate: string;
+  id: string;
+  lat: number;
+  lng: number;
+  severity: number;
+  confidence: number;
+  created_at: string;
 }
 
 /** Bridge component: grabs the real Leaflet map instance and hands it to a callback */
@@ -42,22 +42,29 @@ function ClickHandler({
 }) {
   const map = useMap();
   const selectingRef = useRef(selecting);
+  const isPathSelection = useRef(false);
 
   useEffect(() => {
+    // Check if we're in path selection mode
+    isPathSelection.current = selecting && onSelectingChange === undefined;
+    
     selectingRef.current = selecting;
     const el = map.getContainer();
     el.style.cursor = selecting ? "crosshair" : "";
     return () => {
       el.style.cursor = "";
     };
-  }, [map, selecting]);
+  }, [map, selecting, onSelectingChange]);
 
   useEffect(() => {
     const handleClick = (e: L.LeafletMouseEvent) => {
       if (!selectingRef.current) return;
       const { lat, lng } = e.latlng;
       onPick(lat, lng);
-      onSelectingChange?.(false);
+      // Only call onSelectingChange if we're not in path selection mode
+      if (!isPathSelection.current) {
+        onSelectingChange?.(false);
+      }
     };
 
     map.on("click", handleClick);
@@ -67,6 +74,10 @@ function ClickHandler({
   }, [map, onPick, onSelectingChange]);
 
   return null;
+}
+
+function subtlePlural(count: number) {
+  return count === 1 ? " report" : " reports";
 }
 
 // Component to automatically fit map to route (but only once per route)
@@ -96,10 +107,17 @@ function FitBounds({ route }: { route: [number, number][] }) {
 }
 
 export default function NYCMap() {
-  const [reports] = useState<Report[]>([]);
+  const [reports, setReports] = useState<UserReport[]>([]);
   const [clickedCoords, setClickedCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [selecting, setSelecting] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [pathFinderOpen, setPathFinderOpen] = useState(false);
+  const [selectingForPath, setSelectingForPath] = useState<'none' | 'origin' | 'destination'>('none');
+  const [pathOrigin, setPathOrigin] = useState<{ lat: number; lng: number } | null>(null);
+  const [pathDestination, setPathDestination] = useState<{ lat: number; lng: number } | null>(null);
+  const [reportCoords, setReportCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [pathClickCoords, setPathClickCoords] = useState<{ lat: number; lng: number } | null>(null);
+
   const mapRef = useRef<L.Map | null>(null);
 
   /** Lucide pin icon rendered as static HTML for Leaflet */
@@ -117,12 +135,23 @@ export default function NYCMap() {
     iconAnchor: [12, 24]
   });
 
-  /** Called when user clicks the map in select mode */
-  const handlePick = (lat: number, lng: number) => {
-    setClickedCoords({ lat, lng });
+/** Called when user clicks the map */
+const handlePick = (lat: number, lng: number) => {
+  if (selectingForPath !== "none") {
+    if (selectingForPath === "origin") setPathOrigin({ lat, lng });
+    else setPathDestination({ lat, lng });
+
+    setPathClickCoords({ lat, lng });   // ← only for PathFinder
+    setPathFinderOpen(true);
+    setTimeout(() => setSelectingForPath("none"), 0); // no report side-effects
+  } else if (selecting) {
+    setReportCoords({ lat, lng });      // ← only for Report
     setSelecting(false);
-    mapRef.current?.flyTo([lat, lng], 15);
-  };
+    setDrawerOpen(true);
+  }
+  mapRef.current?.flyTo([lat, lng], 15);
+};
+
 
   /** Called from drawer when "Select on map" clicked */
   const handleRequestSelect = () => {
@@ -135,6 +164,17 @@ export default function NYCMap() {
     setDrawerOpen(true);
   };
 
+  /** Called from nav menu when "Find a Path" clicked */
+  const handleOpenPathFinder = () => {
+    setPathFinderOpen(true);
+  };
+
+  /** Called when PathFinder calculates a new route */
+  const handlePathCalculated = async (origin: [number, number], destination: [number, number]) => {
+    const newRoute = await fetchOSRMRoute(origin, destination);
+    setRoute(newRoute);
+  };
+
   /** Called when drawer geocodes or uses my location */
   const handleDropMarker = (lat: number, lng: number) => {
     setClickedCoords({ lat, lng });
@@ -143,11 +183,7 @@ export default function NYCMap() {
 
   const center: [number, number] = [40.7128, -74.0060];
   const [route, setRoute] = useState<[number, number][]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [showNav, setShowNav] = useState(false);
-
-  const origin: [number, number] = [40.681722, -73.832725];
-  const destination: [number, number] = [40.682725, -73.829194];
 
   const fetchWithRetry = async (url: string, options = {}, retries = 3, delay = 1000) => {
     for (let i = 0; i < retries; i++) {
@@ -183,32 +219,7 @@ export default function NYCMap() {
   };
 
   useEffect(() => {
-    let isMounted = true;
-
-    const fetchRoute = async () => {
-      setIsLoading(true);
-      try {
-        const route = await fetchOSRMRoute(origin, destination);
-        if (isMounted) {
-          setRoute(route);
-        }
-      } catch (error) {
-        console.error('Error in route fetching:', error);
-        if (isMounted) {
-          setRoute([origin, destination]);
-        }
-      } finally {
-        if (isMounted) {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    fetchRoute();
-
-    return () => {
-      isMounted = false;
-    };
+    // Don't auto-load route on mount - user will trigger it via PathFinder
   }, []);
 
   const heatLayerRef = useRef<any>(null);
@@ -247,12 +258,14 @@ export default function NYCMap() {
       setReportsLoading(true);
       const data = await fetchReports();
       setUserReports(data.reports);
+      setReports(data.reports); // ✅ new line — update main reports array too
     } catch (error) {
       console.error('Failed to load reports:', error);
     } finally {
       setReportsLoading(false);
     }
   };
+
 
   const loadNeighborhoods = async () => {
     if (neighborhoodsLoading) return;
@@ -280,7 +293,7 @@ export default function NYCMap() {
 
     const reportPoints: [number, number, number][] = userReports
       .filter(report => report.latitude && report.longitude)
-      .map(report => [report.latitude, report.longitude, Math.max(report.severity / 5, 0.4)]);
+      .map(report => [report.latitude, report.longitude, Math.max(report.severity / 3, 0.6)]);
 
     const allHeatPoints = [...issuePoints, ...reportPoints];
 
@@ -397,15 +410,80 @@ export default function NYCMap() {
     }
   }, [neighborhoods]);
 
+  useEffect(() => {
+    loadReports();
+  }, []);
+
+const [showSplash, setShowSplash] = useState(true);
+const [fadeOut, setFadeOut] = useState(false);
+
+useEffect(() => {
+  // Step 1: show splash for ~2 seconds
+  const timer = setTimeout(() => {
+    setFadeOut(true); // trigger fade-out CSS
+    // Step 2: unmount after fade transition
+    setTimeout(() => setShowSplash(false), 800);
+  }, 2000);
+
+  return () => clearTimeout(timer);
+}, []);
+
+
+
   return (
     <div className="h-screen w-full relative bg-[#FFF9F3]">
-      {/* Loading indicator */}
-      {isLoading && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-white/90 px-4 py-2 rounded-lg shadow-lg z-[1000] flex items-center gap-2">
-          <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
-          <span className="text-sm font-medium">Loading route...</span>
+      {/* Fancy NYC Loading Screen */}
+      {showSplash && (
+      <div
+        className={`absolute inset-0 z-[2000] flex flex-col items-center justify-center
+          bg-gradient-to-b from-[#FFF9F3] to-[#FFEEDA] backdrop-blur-md
+          transition-opacity duration-700 ease-out ${
+            fadeOut ? "opacity-0" : "opacity-100"
+          }`}
+      >
+        <div className="flex flex-col items-center animate-fadeIn">
+          <div className="text-6xl mb-3 animate-bounce">🚧</div>
+          <h1 className="text-2xl font-extrabold text-[#FF6B6B] tracking-tight">
+            Loading Plothole NYC
+          </h1>
+          <p className="text-sm text-gray-500 mt-1 mb-6">
+            Detecting potholes and rendering streets...
+          </p>
+
+          <div className="w-48 h-2 bg-gray-200 rounded-full overflow-hidden shadow-inner">
+            <div className="h-full bg-[#FF6B6B] animate-[progress_2s_ease-in-out_infinite]" />
+          </div>
         </div>
-      )}
+
+        <style jsx>{`
+          @keyframes progress {
+            0% {
+              transform: translateX(-100%);
+            }
+            50% {
+              transform: translateX(0%);
+            }
+            100% {
+              transform: translateX(100%);
+            }
+          }
+          .animate-fadeIn {
+            animation: fadeIn 1.2s ease-out;
+          }
+          @keyframes fadeIn {
+            from {
+              opacity: 0;
+              transform: translateY(10px);
+            }
+            to {
+              opacity: 1;
+              transform: translateY(0);
+            }
+          }
+        `}</style>
+      </div>
+    )}
+
 
       <MapContainer
         center={center}
@@ -428,18 +506,35 @@ export default function NYCMap() {
           </Popup>
         </Marker>
 
-        {/* Origin marker */}
-        <Marker position={origin} icon={lucideMarkerIcon}>
-          <Popup>📍 Origin</Popup>
-        </Marker>
+        {/* Route Polyline & Pins */}
+        {route.length > 0 && (
+          <Polyline positions={route} color="#FF6B6B" weight={4} />
+        )}
 
-        {/* Destination marker */}
-        <Marker position={destination} icon={lucideMarkerIcon}>
-          <Popup>📍 Destination</Popup>
-        </Marker>
+        {/* Temporary route selection pins */}
+        {pathOrigin && (
+          <Marker position={[pathOrigin.lat, pathOrigin.lng]} icon={lucideMarkerIcon}>
+            <Popup>📍 Origin</Popup>
+          </Marker>
+        )}
+        {pathDestination && (
+          <Marker position={[pathDestination.lat, pathDestination.lng]} icon={lucideMarkerIcon}>
+            <Popup>🎯 Destination</Popup>
+          </Marker>
+        )}
 
-        {/* Route Polyline */}
-        {route.length > 0 && <Polyline positions={route} color="#FF6B6B" weight={4} />}
+        {/* Report pin */}
+        {reportCoords && (
+          <Marker position={[reportCoords.lat, reportCoords.lng]} icon={lucidePinIcon}>
+            <Popup>
+              <div className="text-sm">
+                📍 Selected Location
+                <br />
+                ({reportCoords.lat.toFixed(4)}, {reportCoords.lng.toFixed(4)})
+              </div>
+            </Popup>
+          </Marker>
+        )}
 
         {/* Fit map to route */}
         <FitBounds route={route} />
@@ -447,24 +542,36 @@ export default function NYCMap() {
         {/* Render existing pothole reports */}
         {reports.map((r) => (
           <CircleMarker
-            key={r.UniqueKey}
-            center={[r.Latitude, r.Longitude]}
+            key={`${r.id}-${r.latitude}-${r.longitude}`}
+            center={[r.latitude, r.longitude]}
             radius={4.5}
             pathOptions={{
-              color: r.Status === "Closed" ? "#9bf6ff" : r.Status === "Open" ? "#ffadad" : "#ffd6a5",
+              color: "#FF6B6B",
               fillOpacity: 0.9,
             }}
           >
             <Popup>
               <div className="text-sm font-medium leading-tight">
-                <b>{r.Descriptor}</b><br />
-                Status: {r.Status}<br />
-                Borough: {r.Borough}<br />
-                Created: {r.CreatedDate}
+                <b>Reported Pothole</b><br />
+                Severity: {r.severity}<br />
+                Confidence: {(r.confidence * 100).toFixed(1)}%<br />
+                Created: {new Date(r.created_at).toLocaleString()}
               </div>
+
+              {/* 🖼️ Image Preview (if available) */}
+              {r.image_url && (
+                <div className="mt-2">
+                  <img
+                    src={r.image_url}
+                    alt="Pothole report"
+                    className="w-48 h-32 object-cover rounded-md border border-gray-300 shadow-sm"
+                  />
+                </div>
+              )}
             </Popup>
           </CircleMarker>
         ))}
+
 
         {/* Pin for selected location */}
         {clickedCoords && (
@@ -479,12 +586,17 @@ export default function NYCMap() {
           </Marker>
         )}
 
-        <ClickHandler selecting={selecting} onPick={handlePick} onSelectingChange={setSelecting} />
+        <ClickHandler
+          selecting={selecting || selectingForPath !== "none"}
+          onPick={handlePick}
+          onSelectingChange={selectingForPath === "none" ? setSelecting : undefined}
+        />
       </MapContainer>
-
+      
       {/* Header */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] bg-white/80 backdrop-blur-md px-6 py-2 rounded-full text-sm font-semibold text-[#2B2B2B] shadow-md border border-[#f0f0f0]">
-        🗽 NYC Pothole Reports • <span className="font-bold text-[#FF6B6B]">{reports.length}</span> {reports.length === 1 ? 'report' : 'reports'}
+        🗽 NYC Pothole Reports • <span className="font-bold text-[#FF6B6B]">{reports.length}</span> 
+        {subtlePlural(reports.length)}
       </div>
 
       {/* Unified Navigation Menu */}
@@ -508,6 +620,17 @@ export default function NYCMap() {
             >
               <Flame className="w-4 h-4 mr-3 text-orange-500" />
               Heatmap Options
+            </button>
+
+            <button
+              onClick={() => {
+                handleOpenPathFinder();
+                setShowNav(false);
+              }}
+              className="w-full flex items-center px-4 py-3 text-sm font-medium text-gray-800 hover:bg-gray-50 transition-colors border-b border-gray-100"
+            >
+              <Navigation className="w-4 h-4 mr-3 text-indigo-500" />
+              Find a Path
             </button>
 
             <button
@@ -603,17 +726,33 @@ export default function NYCMap() {
       )}
 
       {/* Selection banner */}
-      {selecting && (
+      {(selecting || selectingForPath !== 'none') && (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-[1000] bg-[#FFD6A5] text-[#2B2B2B] px-5 py-2.5 rounded-full text-sm font-semibold shadow-lg border border-[#f0e3c0]">
-          👆 Click anywhere on the map to choose a location
+          👆 Click anywhere on the map to choose {selectingForPath !== 'none' ? selectingForPath : 'a location'}
         </div>
       )}
 
-      {/* Drawer */}
+      {/* PathFinder Drawer */}
+      <PathFinderDrawer
+        isOpen={pathFinderOpen}
+        onOpenChange={setPathFinderOpen}
+        clickedCoords={pathClickCoords}          // ← not report coords
+        selectMode={selectingForPath}
+        onRequestSelectOrigin={() => { setSelectingForPath("origin"); setPathClickCoords(null); }}
+        onRequestSelectDestination={() => { setSelectingForPath("destination"); setPathClickCoords(null); }}
+        onPathCalculated={handlePathCalculated}
+      />
+
       <ReportDrawer
-        clickedCoords={clickedCoords}
-        onDropMarker={handleDropMarker}
-        onRequestSelect={handleRequestSelect}
+        clickedCoords={reportCoords}             // ← report-only coords
+        onDropMarker={(lat, lng) => {
+          setReportCoords({ lat, lng });
+          mapRef.current?.flyTo([lat, lng], 15);
+        }}
+        onRequestSelect={() => {
+          setSelecting(true);
+          setReportCoords(null);
+        }}
         isOpen={drawerOpen}
         onOpenChange={setDrawerOpen}
       />

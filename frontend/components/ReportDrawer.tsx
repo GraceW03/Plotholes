@@ -31,15 +31,35 @@ export default function ReportDrawer({
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [myConfetti, setMyConfetti] = useState<any>(null);
 
-  // ✅ simplified - just call it directly
+  // 🎊 create global confetti canvas once
+  useEffect(() => {
+    const canvas = document.createElement("canvas");
+    canvas.id = "confetti-canvas";
+    canvas.style.position = "fixed";
+    canvas.style.top = "0";
+    canvas.style.left = "0";
+    canvas.style.width = "100%";
+    canvas.style.height = "100%";
+    canvas.style.pointerEvents = "none";
+    canvas.style.zIndex = "9999";
+    document.body.appendChild(canvas);
+
+    const c = confetti.create(canvas, { resize: true, useWorker: true });
+    setMyConfetti(() => c);
+
+    return () => {
+      canvas.remove();
+    };
+  }, []);
+
   const handleRequestSelect = () => {
     console.log("🗺️ Select on map clicked");
-    onRequestSelect(); // call parent's handler
-    setOpen(false); // close drawer so user can see map
+    onRequestSelect();
+    setOpen(false);
   };
 
-  // 🌎 reverse-geocode coords → readable address
   const fetchAddress = async (lat: number, lng: number) => {
     try {
       const res = await fetch(
@@ -52,7 +72,6 @@ export default function ReportDrawer({
     }
   };
 
-  // 🧭 when user clicks map, prefill coords + open drawer + fetch address
   useEffect(() => {
     if (clickedCoords) {
       setCoords(clickedCoords);
@@ -61,7 +80,6 @@ export default function ReportDrawer({
     }
   }, [clickedCoords]);
 
-  // 📍 Use my location
   const handleUseMyLocation = () => {
     if (!navigator.geolocation) return alert("Geolocation not supported!");
     navigator.geolocation.getCurrentPosition(
@@ -75,7 +93,6 @@ export default function ReportDrawer({
     );
   };
 
-  // 🖱️ Drag-and-drop upload
   const handleDrop = (e: React.DragEvent<HTMLLabelElement>) => {
     e.preventDefault();
     setDragOver(false);
@@ -83,7 +100,6 @@ export default function ReportDrawer({
     if (dropped) setFile(dropped);
   };
 
-  // 🚀 Submit
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!file) return alert("Please upload an image first!");
@@ -104,7 +120,8 @@ export default function ReportDrawer({
       setResult(data);
 
       if (!data.error) {
-        confetti({
+        console.log("🎉 Confetti fired!");
+        myConfetti?.({
           particleCount: 120,
           spread: 70,
           origin: { y: 0.7 },
@@ -124,7 +141,6 @@ export default function ReportDrawer({
 
   return (
     <>
-      {/* Drawer */}
       <AnimatePresence>
         {open && (
           <motion.div
@@ -133,9 +149,8 @@ export default function ReportDrawer({
             animate={{ x: 0 }}
             exit={{ x: -350 }}
             transition={{ type: "spring", stiffness: 120, damping: 20 }}
-            className="fixed top-0 left-0 h-full w-[330px] z-[1000] bg-white/95 backdrop-blur-xl shadow-2xl rounded-r-3xl border-r border-[#f2f2f2] flex flex-col justify-between"
+            className="fixed top-0 left-0 h-full w-[330px] z-[1000] bg-white/95 backdrop-blur-xl shadow-2xl rounded-r-xl border-r border-[#f2f2f2] flex flex-col justify-between"
           >
-            {/* Header */}
             <div className="flex items-center justify-between px-6 py-5 border-b border-[#f5f5f5]">
               <h2 className="text-lg font-extrabold text-[#2B2B2B] flex items-center gap-2">
                 <MapPin className="w-5 h-5 text-[#FF6B6B]" /> New Report
@@ -149,12 +164,10 @@ export default function ReportDrawer({
               </button>
             </div>
 
-            {/* Form */}
             <form
               onSubmit={handleSubmit}
               className="flex flex-col flex-grow justify-start gap-6 px-6 py-5 overflow-y-auto"
             >
-              {/* Upload */}
               <div className="flex flex-col gap-2">
                 <label className="font-semibold text-sm text-gray-700">
                   Upload a road photo:
@@ -194,7 +207,6 @@ export default function ReportDrawer({
                 )}
               </div>
 
-              {/* Coordinates + Address */}
               <div className="flex flex-col gap-2">
                 <label className="font-semibold text-sm text-gray-700">Location:</label>
 
@@ -241,8 +253,6 @@ export default function ReportDrawer({
                   >
                     📍 Use my current location
                   </button>
-
-                  {/* ✅ Fixed handler */}
                   <button
                     type="button"
                     onClick={handleRequestSelect}
@@ -253,7 +263,6 @@ export default function ReportDrawer({
                 </div>
               </div>
 
-              {/* Submit */}
               <motion.button
                 type="submit"
                 disabled={loading}
@@ -263,7 +272,6 @@ export default function ReportDrawer({
                 {loading ? "Analyzing..." : "Submit Report"}
               </motion.button>
 
-              {/* Result */}
               {result && !result.error && (
                 <div
                   className={`mt-3 text-sm font-semibold px-3 py-2 rounded-lg text-[#2B2B2B] ${
@@ -283,7 +291,6 @@ export default function ReportDrawer({
               )}
             </form>
 
-            {/* Footer */}
             <div className="px-6 py-4 border-t border-[#f5f5f5] text-center text-xs text-gray-400">
               🕳️ Powered by <b>Plothole ML</b>
             </div>
